@@ -201,3 +201,30 @@ pub fn greater_than_or_equal_float(
 ) -> Expression(Float) {
   binary_operator(left, ">=.", right)
 }
+
+fn unary_operator(operator: String, value: Expression(a)) -> Expression(a) {
+  [doc.from_string(operator), value.document] |> doc.concat |> Expression
+}
+
+pub fn negate_int(value: Expression(Int)) -> Expression(Int) {
+  unary_operator("-", value)
+}
+
+pub fn negate_bool(value: Expression(Bool)) -> Expression(Bool) {
+  unary_operator("!", value)
+}
+// TODO:
+// BitString
+// Block
+// Call
+// Case
+// Echo
+// FieldAccess
+// Float
+// Fn
+// FnCapture
+// Pipes
+// RecordUpdate
+// Tuple
+// TupleIndex
+// Variable

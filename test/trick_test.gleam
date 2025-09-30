@@ -130,3 +130,11 @@ pub fn binary_operator_test() {
     |> trick.expression_to_string
     == "False != False"
 }
+
+pub fn unary_operator_test() {
+  assert 10 |> trick.int |> trick.negate_int |> trick.expression_to_string
+    == "-10"
+
+  assert False |> trick.bool |> trick.negate_bool |> trick.expression_to_string
+    == "!False"
+}
