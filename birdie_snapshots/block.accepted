@@ -1,0 +1,11 @@
+---
+version: 1.4.1
+title: block
+file: ./test/trick_test.gleam
+test_name: block_test
+---
+{
+  let a = 1
+  let b = 2
+  a + b
+}

@@ -1,0 +1,12 @@
+---
+version: 1.4.1
+title: block_with_discarded_expression
+file: ./test/trick_test.gleam
+test_name: block_with_discarded_expression_test
+---
+{
+  let a = 1
+  let b = a + 1
+  echo b
+  a * b
+}

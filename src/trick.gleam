@@ -11,6 +11,10 @@ pub opaque type Expression(type_) {
   Expression(document: Document)
 }
 
+pub opaque type Statement(type_) {
+  Statement(document: Document)
+}
+
 const width = 80
 
 const indent = 2
@@ -237,9 +241,7 @@ fn add_message(document: Document, message: Document) -> Document {
     doc.from_string("as "),
     message,
   ]
-  |> doc.concat
-  |> doc.nest(indent)
-  |> doc.group
+  |> grouped
 }
 
 pub fn panic_(message: Option(Expression(String))) -> Expression(a) {
@@ -267,9 +269,59 @@ pub fn echo_(
     Some(message) -> add_message(echo_, message.document)
   })
 }
+
+pub fn variable(
+  name: String,
+  value: Expression(a),
+  continue: fn(Expression(a)) -> Statement(b),
+) -> Statement(b) {
+  let declaration =
+    [
+      doc.from_string("let "),
+      doc.from_string(name),
+      doc.break(" = ", " ="),
+      value.document,
+    ]
+    |> grouped
+    |> doc.append(doc.line)
+
+  let variable_expression = Expression(doc.from_string(name))
+
+  let rest = continue(variable_expression)
+
+  Statement(doc.prepend(declaration, to: rest.document))
+}
+
+fn grouped(documents: List(Document)) -> Document {
+  documents |> doc.concat |> doc.nest(indent) |> doc.group
+}
+
+pub fn expression(expression: Expression(a)) -> Statement(a) {
+  Statement(expression.document)
+}
+
+pub fn discard(
+  statement: Statement(a),
+  continue: fn() -> Statement(b),
+) -> Statement(b) {
+  let rest = continue()
+  Statement(doc.concat([statement.document, doc.line, rest.document]))
+}
+
+pub fn block(inner: Statement(a)) -> Expression(a) {
+  [
+    doc.from_string("{"),
+    doc.line,
+    inner.document,
+  ]
+  |> doc.concat
+  |> doc.nest(indent)
+  |> doc.append(doc.line)
+  |> doc.append(doc.from_string("}"))
+  |> Expression
+}
 // TODO:
 // BitString
-// Block
 // Call
 // Case
 // FieldAccess
@@ -279,4 +331,3 @@ pub fn echo_(
 // RecordUpdate
 // Tuple
 // TupleIndex
-// Variable

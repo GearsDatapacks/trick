@@ -229,3 +229,27 @@ pub fn echo_with_long_message_test() {
   |> trick.expression_to_string
   |> birdie.snap("echo_with_long_message")
 }
+
+pub fn block_test() {
+  let block = {
+    use a <- trick.variable("a", trick.int(1))
+    use b <- trick.variable("b", trick.int(2))
+    trick.expression(trick.add(a, b))
+  }
+
+  block |> trick.block |> trick.expression_to_string |> birdie.snap("block")
+}
+
+pub fn block_with_discarded_expression_test() {
+  let block = {
+    use a <- trick.variable("a", trick.int(1))
+    use b <- trick.variable("b", trick.add(a, trick.int(1)))
+    use <- trick.discard(trick.expression(trick.echo_(b, None)))
+    trick.expression(trick.multiply(a, b))
+  }
+
+  block
+  |> trick.block
+  |> trick.expression_to_string
+  |> birdie.snap("block_with_discarded_expression")
+}
