@@ -1,13 +1,23 @@
 import gleeunit
+import trick
 
 pub fn main() -> Nil {
   gleeunit.main()
 }
 
-// gleeunit test functions end in `_test`
-pub fn hello_world_test() {
-  let name = "Joe"
-  let greeting = "Hello, " <> name <> "!"
+pub fn int_literal_test() {
+  assert 53 |> trick.int |> trick.expression_to_string == "53"
+}
 
-  assert greeting == "Hello, Joe!"
+pub fn float_literal_test() {
+  assert 3.1415 |> trick.float |> trick.expression_to_string == "3.1415"
+}
+
+pub fn string_literal_test() {
+  assert "Hello! This is a string.
+It has multiple lines,\nand even quotes: \". This is how you type a backslash: \\\\"
+    |> trick.string
+    |> trick.expression_to_string
+    == "\"Hello! This is a string.
+It has multiple lines,\nand even quotes: \\\". This is how you type a backslash: \\\\\\\\\""
 }
