@@ -1,0 +1,10 @@
+---
+version: 1.4.1
+title: assert_with_long_message
+file: ./test/trick_test.gleam
+test_name: assert_with_long_message_test
+---
+{
+  assert 1 == 2
+    as "This is always going to fail, because one should not be equal to two, unless something weird is happening"
+}

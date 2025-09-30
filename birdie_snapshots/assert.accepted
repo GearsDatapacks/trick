@@ -1,0 +1,9 @@
+---
+version: 1.4.1
+title: assert
+file: ./test/trick_test.gleam
+test_name: assert_test
+---
+{
+  assert 1 == 2
+}

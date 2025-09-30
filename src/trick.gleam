@@ -320,6 +320,18 @@ pub fn block(inner: Statement(a)) -> Expression(a) {
   |> doc.append(doc.from_string("}"))
   |> Expression
 }
+
+pub fn assert_(
+  condition: Expression(Bool),
+  message: Option(Expression(String)),
+) -> Statement(Nil) {
+  let assert_ = doc.prepend(doc.from_string("assert "), to: condition.document)
+
+  Statement(case message {
+    None -> assert_
+    Some(message) -> add_message(assert_, message.document)
+  })
+}
 // TODO:
 // BitString
 // Call
@@ -327,7 +339,10 @@ pub fn block(inner: Statement(a)) -> Expression(a) {
 // FieldAccess
 // Fn
 // FnCapture
+// Let assert
+// Let with patterns
 // Pipes
 // RecordUpdate
 // Tuple
 // TupleIndex
+// Use

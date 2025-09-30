@@ -253,3 +253,31 @@ pub fn block_with_discarded_expression_test() {
   |> trick.expression_to_string
   |> birdie.snap("block_with_discarded_expression")
 }
+
+pub fn assert_test() {
+  trick.equal(trick.int(1), trick.int(2))
+  |> trick.assert_(None)
+  |> trick.block
+  |> trick.expression_to_string
+  |> birdie.snap("assert")
+}
+
+pub fn assert_with_message_test() {
+  trick.equal(trick.int(1), trick.int(2))
+  |> trick.assert_(Some(trick.string("This is always going to fail")))
+  |> trick.block
+  |> trick.expression_to_string
+  |> birdie.snap("assert_with_message")
+}
+
+pub fn assert_with_long_message_test() {
+  trick.equal(trick.int(1), trick.int(2))
+  |> trick.assert_(
+    Some(trick.string(
+      "This is always going to fail, because one should not be equal to two, unless something weird is happening",
+    )),
+  )
+  |> trick.block
+  |> trick.expression_to_string
+  |> birdie.snap("assert_with_long_message")
+}
