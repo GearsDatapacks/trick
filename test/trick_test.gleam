@@ -1,3 +1,6 @@
+import birdie
+import gleam/list
+import gleam/option.{None, Some}
 import gleeunit
 import trick
 
@@ -14,12 +17,11 @@ pub fn float_literal_test() {
 }
 
 pub fn string_literal_test() {
-  assert "Hello! This is a string.
+  "Hello! This is a string.
 It has multiple lines,\nand even quotes: \". This is how you type a backslash: \\\\"
-    |> trick.string
-    |> trick.expression_to_string
-    == "\"Hello! This is a string.
-It has multiple lines,\nand even quotes: \\\". This is how you type a backslash: \\\\\\\\\""
+  |> trick.string
+  |> trick.expression_to_string
+  |> birdie.snap("string_literal")
 }
 
 pub fn binary_operator_test() {
@@ -137,4 +139,93 @@ pub fn unary_operator_test() {
 
   assert False |> trick.bool |> trick.negate_bool |> trick.expression_to_string
     == "!False"
+}
+
+pub fn list_test() {
+  assert [1, 2, 3, 4]
+    |> list.map(trick.int)
+    |> trick.list
+    |> trick.expression_to_string
+    == "[1, 2, 3, 4]"
+}
+
+pub fn long_list_test() {
+  [
+    "Some long string",
+    "A different but equally long string",
+    "One last long string to get past the line limit",
+  ]
+  |> list.map(trick.string)
+  |> trick.list
+  |> trick.expression_to_string
+  |> birdie.snap("long_list")
+}
+
+pub fn panic_no_message_test() {
+  assert trick.panic_(None) |> trick.expression_to_string == "panic"
+}
+
+pub fn panic_with_message_test() {
+  "Uh oh"
+  |> trick.string
+  |> Some
+  |> trick.panic_
+  |> trick.expression_to_string
+  |> birdie.snap("panic_with_message")
+}
+
+pub fn panic_with_long_message_test() {
+  "Something went wrong. This message is detailed and explains why, causing it to go over the line limit"
+  |> trick.string
+  |> Some
+  |> trick.panic_
+  |> trick.expression_to_string
+  |> birdie.snap("panic_with_long_message")
+}
+
+pub fn todo_no_message_test() {
+  assert trick.todo_(None) |> trick.expression_to_string == "todo"
+}
+
+pub fn todo_with_message_test() {
+  "This code is coming soon!"
+  |> trick.string
+  |> Some
+  |> trick.todo_
+  |> trick.expression_to_string
+  |> birdie.snap("todo_with_message")
+}
+
+pub fn todo_with_long_message_test() {
+  "This code is unfortunately not yet implemented. Please try again later to check if it has been written"
+  |> trick.string
+  |> Some
+  |> trick.todo_
+  |> trick.expression_to_string
+  |> birdie.snap("todo_with_long_message")
+}
+
+pub fn echo_test() {
+  assert 15 |> trick.int |> trick.echo_(None) |> trick.expression_to_string
+    == "echo 15"
+}
+
+pub fn echo_with_message_test() {
+  3.14
+  |> trick.float
+  |> trick.echo_(Some(trick.string("This is a pi!")))
+  |> trick.expression_to_string
+  |> birdie.snap("echo_with_message")
+}
+
+pub fn echo_with_long_message_test() {
+  3.14
+  |> trick.float
+  |> trick.echo_(
+    Some(trick.string(
+      "This is a pi! It is the ratio between the radius and circumference of a circle.",
+    )),
+  )
+  |> trick.expression_to_string
+  |> birdie.snap("echo_with_long_message")
 }

@@ -2,6 +2,8 @@ import glam/doc.{type Document}
 import gleam/bool
 import gleam/float
 import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
 import lazy_const
 import splitter
 
@@ -10,6 +12,8 @@ pub opaque type Expression(type_) {
 }
 
 const width = 80
+
+const indent = 2
 
 pub fn expression_to_string(expression: Expression(any)) -> String {
   doc.to_string(expression.document, width)
@@ -31,7 +35,7 @@ pub fn bool(value: Bool) -> Expression(Bool) {
   value |> bool.to_string |> doc.from_string |> Expression
 }
 
-pub fn escape_string_literal(string: String) -> String {
+fn escape_string_literal(string: String) -> String {
   escape_string_literal_loop(string, escape_string_literal_splitter(), "\"")
 }
 
@@ -213,14 +217,62 @@ pub fn negate_int(value: Expression(Int)) -> Expression(Int) {
 pub fn negate_bool(value: Expression(Bool)) -> Expression(Bool) {
   unary_operator("!", value)
 }
+
+pub fn list(values: List(Expression(a))) -> Expression(List(a)) {
+  values
+  |> list.map(fn(value) { value.document })
+  |> doc.join(doc.break(", ", ","))
+  |> doc.prepend(doc.break("[", "["))
+  |> doc.nest(indent)
+  |> doc.append(doc.break("", ", "))
+  |> doc.append(doc.from_string("]"))
+  |> doc.group
+  |> Expression
+}
+
+fn add_message(document: Document, message: Document) -> Document {
+  [
+    document,
+    doc.break(" ", ""),
+    doc.from_string("as "),
+    message,
+  ]
+  |> doc.concat
+  |> doc.nest(indent)
+  |> doc.group
+}
+
+pub fn panic_(message: Option(Expression(String))) -> Expression(a) {
+  Expression(case message {
+    None -> doc.from_string("panic")
+    Some(message) -> add_message(doc.from_string("panic"), message.document)
+  })
+}
+
+pub fn todo_(message: Option(Expression(String))) -> Expression(a) {
+  Expression(case message {
+    None -> doc.from_string("todo")
+    Some(message) -> add_message(doc.from_string("todo"), message.document)
+  })
+}
+
+pub fn echo_(
+  value: Expression(a),
+  message: Option(Expression(String)),
+) -> Expression(a) {
+  let echo_ = doc.prepend(doc.from_string("echo "), to: value.document)
+
+  Expression(case message {
+    None -> echo_
+    Some(message) -> add_message(echo_, message.document)
+  })
+}
 // TODO:
 // BitString
 // Block
 // Call
 // Case
-// Echo
 // FieldAccess
-// Float
 // Fn
 // FnCapture
 // Pipes

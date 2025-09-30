@@ -1,0 +1,7 @@
+---
+version: 1.4.1
+title: panic_with_message
+file: ./test/trick_test.gleam
+test_name: panic_with_message_test
+---
+panic as "Uh oh"

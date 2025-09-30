@@ -1,0 +1,8 @@
+---
+version: 1.4.1
+title: echo_with_long_message
+file: ./test/trick_test.gleam
+test_name: echo_with_long_message_test
+---
+echo 3.14
+  as "This is a pi! It is the ratio between the radius and circumference of a circle."

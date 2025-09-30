@@ -1,0 +1,9 @@
+---
+version: 1.4.1
+title: string_literal
+file: ./test/trick_test.gleam
+test_name: string_literal_test
+---
+"Hello! This is a string.
+It has multiple lines,
+and even quotes: \". This is how you type a backslash: \\\\"

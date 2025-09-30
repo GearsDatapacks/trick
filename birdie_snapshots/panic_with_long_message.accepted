@@ -1,0 +1,8 @@
+---
+version: 1.4.1
+title: panic_with_long_message
+file: ./test/trick_test.gleam
+test_name: panic_with_long_message_test
+---
+panic
+  as "Something went wrong. This message is detailed and explains why, causing it to go over the line limit"

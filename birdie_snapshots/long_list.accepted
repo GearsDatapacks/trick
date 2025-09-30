@@ -1,0 +1,11 @@
+---
+version: 1.4.1
+title: long_list
+file: ./test/trick_test.gleam
+test_name: long_list_test
+---
+[
+  "Some long string",
+  "A different but equally long string",
+  "One last long string to get past the line limit", 
+]
