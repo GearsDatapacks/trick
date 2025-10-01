@@ -1,0 +1,12 @@
+---
+version: 1.4.1
+title: long_tuple
+file: ./test/trick_test.gleam
+test_name: long_tuple_test
+---
+#(
+  1,
+  False,
+  3.14,
+  "This string is long enough to cause the tuple to exceed the line limit", 
+)

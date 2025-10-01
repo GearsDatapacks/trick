@@ -178,6 +178,10 @@ const type_bool = trick.Custom("gleam", "Bool", [])
 
 const type_nil = trick.Custom("gleam", "Nil", [])
 
+fn type_list(element: trick.Type) -> trick.Type {
+  trick.Custom("gleam", "List", [element])
+}
+
 pub fn binary_operator_type_mismatch_test() {
   let assert Error(error) =
     trick.add(trick.int(10), trick.float(20.0))
@@ -406,4 +410,60 @@ pub fn assert_with_long_message_test() {
   |> trick.expression_to_string
   |> unwrap
   |> birdie.snap("assert_with_long_message")
+}
+
+pub fn tuple_test() {
+  assert [trick.int(1), trick.bool(False), trick.float(3.14)]
+    |> trick.tuple
+    |> trick.expression_to_string
+    |> unwrap
+    == "#(1, False, 3.14)"
+}
+
+pub fn long_tuple_test() {
+  [
+    trick.int(1),
+    trick.bool(False),
+    trick.float(3.14),
+    trick.string(
+      "This string is long enough to cause the tuple to exceed the line limit",
+    ),
+  ]
+  |> trick.tuple
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("long_tuple")
+}
+
+pub fn tuple_access_test() {
+  {
+    use tuple <- trick.variable(
+      "tuple",
+      trick.tuple([trick.int(10), trick.float(10.0), trick.string("10")]),
+    )
+    trick.tuple_index(tuple, 1)
+    |> trick.add_float(trick.float(1.0))
+    |> trick.expression
+  }
+  |> trick.block
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("tuple_access")
+}
+
+pub fn tuple_access_error_test() {
+  let assert Error(error) =
+    [trick.int(10), trick.float(10.0)]
+    |> trick.tuple
+    |> trick.tuple_index(5)
+    |> trick.expression_to_string
+  assert error == trick.TupleIndexOutOfBounds(length: 2, index: 5)
+
+  let assert Error(error) =
+    [1, 2, 3]
+    |> list.map(trick.int)
+    |> trick.list
+    |> trick.tuple_index(2)
+    |> trick.expression_to_string
+  assert error == trick.InvalidTupleAccess(type_: type_list(type_int))
 }

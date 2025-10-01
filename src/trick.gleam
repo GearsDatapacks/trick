@@ -15,6 +15,8 @@ pub opaque type Expression {
 
 pub type Error {
   TypeMismatch(expected: Type, got: Type)
+  TupleIndexOutOfBounds(length: Int, index: Int)
+  InvalidTupleAccess(type_: Type)
 }
 
 type CompiledExpression {
@@ -24,6 +26,7 @@ type CompiledExpression {
 pub type Type {
   Custom(module: String, name: String, generics: List(Type))
   TypeVariable(id: Int)
+  Tuple(elements: List(Type))
 }
 
 type State {
@@ -67,6 +70,15 @@ fn compile_statement(
 
 fn return(value: CompiledExpression) -> Expression {
   Expression(fn(state) { Ok(#(state, value)) })
+}
+
+fn pure(value: Result(a, Error)) -> fn(State) -> Result(#(State, a), Error) {
+  fn(state) {
+    case value {
+      Error(error) -> Error(error)
+      Ok(value) -> Ok(#(state, value))
+    }
+  }
 }
 
 fn try(
@@ -176,6 +188,20 @@ fn unify_type_variable(
   }
 }
 
+fn unwrap_type(type_: Type) -> fn(State) -> #(State, Type) {
+  fn(state: State) {
+    let unwrapped = case type_ {
+      Custom(..) | Tuple(..) -> type_
+      TypeVariable(id:) ->
+        case dict.get(state.resolved_variables, id) {
+          Error(_) -> type_
+          Ok(type_) -> type_
+        }
+    }
+    #(state, unwrapped)
+  }
+}
+
 pub opaque type Statement {
   Statement(compile: fn(State) -> Result(#(State, CompiledExpression), Error))
 }
@@ -185,9 +211,10 @@ const width = 80
 const indent = 2
 
 pub fn expression_to_string(expression: Expression) -> Result(String, Error) {
-  result.map(expression.compile(new_state()), fn(expression) {
-    doc.to_string({ expression.1 }.document, width)
-  })
+  case expression.compile(new_state()) {
+    Ok(#(_state, expression)) -> Ok(doc.to_string(expression.document, width))
+    Error(error) -> Error(error)
+  }
 }
 
 fn new_state() -> State {
@@ -548,6 +575,54 @@ pub fn assert_(condition: Expression, message: Option(Expression)) -> Statement 
     }
   }
 }
+
+pub fn tuple(values: List(Expression)) -> Expression {
+  use values <- compile_expressions(values)
+
+  let #(documents, types) =
+    values
+    |> list.map(fn(value) { #(value.document, value.type_) })
+    |> list.unzip
+
+  documents
+  |> doc.join(doc.break(", ", ","))
+  |> doc.prepend(doc.break("#(", "#("))
+  |> doc.nest(indent)
+  |> doc.append(doc.break("", ", "))
+  |> doc.append(doc.from_string(")"))
+  |> doc.group
+  |> Compiled(Tuple(types))
+  |> return
+}
+
+pub fn tuple_index(tuple: Expression, index: Int) -> Expression {
+  use tuple <- compile(tuple)
+  use unwrapped <- then(unwrap_type(tuple.type_))
+  use type_ <- try(
+    pure(case unwrapped {
+      Custom(..) as type_ | TypeVariable(..) as type_ ->
+        Error(InvalidTupleAccess(type_))
+      Tuple(elements:) ->
+        case list_at(elements, index, 0) {
+          Error(length) -> Error(TupleIndexOutOfBounds(length:, index:))
+          Ok(type_) -> Ok(type_)
+        }
+    }),
+  )
+  [tuple.document, doc.from_string("."), doc.from_string(int.to_string(index))]
+  |> doc.concat
+  |> Compiled(type_)
+  |> return
+}
+
+fn list_at(list: List(a), index: Int, length: Int) -> Result(a, Int) {
+  case list, index {
+    [first, ..], 0 -> Ok(first)
+    [], _ -> Error(length)
+    _, _ if index < 0 -> Error(0)
+    [_, ..list], _ -> list_at(list, index - 1, length + 1)
+  }
+}
 // TODO:
 // BitString
 // Call
@@ -559,6 +634,4 @@ pub fn assert_(condition: Expression, message: Option(Expression)) -> Statement 
 // Let with patterns
 // Pipes
 // RecordUpdate
-// Tuple
-// TupleIndex
 // Use
