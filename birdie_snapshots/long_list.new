@@ -1,0 +1,9 @@
+---
+version: 1.4.1
+title: long_list
+---
+[
+  "One last long string to get past the line limit",
+  "A different but equally long string",
+  "Some long string", 
+]
