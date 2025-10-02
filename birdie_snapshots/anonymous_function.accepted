@@ -1,0 +1,10 @@
+---
+version: 1.4.1
+title: anonymous_function
+file: ./test/trick_test.gleam
+test_name: anonymous_function_test
+---
+{
+  let f = fn(a, b) { a + b }
+  f(1, 2)
+}

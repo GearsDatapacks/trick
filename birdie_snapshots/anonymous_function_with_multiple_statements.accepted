@@ -1,0 +1,11 @@
+---
+version: 1.4.1
+title: anonymous_function_with_multiple_statements
+file: ./test/trick_test.gleam
+test_name: anonymous_function_with_multiple_statements_test
+---
+fn(a, b) {
+  let c = a + b
+  echo c
+  c
+}

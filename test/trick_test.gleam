@@ -467,3 +467,106 @@ pub fn tuple_access_error_test() {
     |> trick.expression_to_string
   assert error == trick.InvalidTupleAccess(type_: type_list(type_int))
 }
+
+pub fn anonymous_function_test() {
+  {
+    let anonymous =
+      trick.anonymous({
+        use a <- trick.parameter("a", type_int)
+        use b <- trick.parameter("b", type_int)
+        trick.add(a, b) |> trick.expression |> trick.function_body
+      })
+
+    use f <- trick.variable("f", anonymous)
+    trick.expression(trick.call(f, [trick.int(1), trick.int(2)]))
+  }
+  |> trick.block
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("anonymous_function")
+}
+
+pub fn anonymous_function_with_multiple_statements_test() {
+  {
+    use a <- trick.parameter("a", type_int)
+    use b <- trick.parameter("b", type_int)
+    {
+      use c <- trick.variable("c", trick.add(a, b))
+      use <- trick.discard(trick.expression(trick.echo_(c, None)))
+      trick.expression(c)
+    }
+    |> trick.function_body
+  }
+  |> trick.anonymous
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("anonymous_function_with_multiple_statements")
+}
+
+pub fn long_call_test() {
+  {
+    use concat <- trick.variable(
+      "concat",
+      trick.anonymous({
+        use a <- trick.parameter("a", type_string)
+        use b <- trick.parameter("b", type_string)
+        trick.concatenate(a, b)
+        |> trick.expression
+        |> trick.function_body
+      }),
+    )
+
+    concat
+    |> trick.call([
+      trick.string("This string is pretty long by itself, but"),
+      trick.string(" combined with this one it goes over the line limit"),
+    ])
+    |> trick.expression
+  }
+  |> trick.block
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("long_call")
+}
+
+pub fn invalid_call_test() {
+  let assert Error(error) =
+    trick.int(10)
+    |> trick.call([trick.float(10.0)])
+    |> trick.expression_to_string
+  assert error == trick.InvalidCall(type_int)
+}
+
+pub fn incorrect_number_of_arguments_test() {
+  let function =
+    trick.anonymous({
+      use a <- trick.parameter("a", type_int)
+      a
+      |> trick.add(trick.int(1))
+      |> trick.expression
+      |> trick.function_body
+    })
+
+  let assert Error(error) =
+    function
+    |> trick.call([trick.int(1), trick.int(2)])
+    |> trick.expression_to_string
+  assert error == trick.IncorrectNumberOfArguments(expected: 1, got: 2)
+}
+
+pub fn incorrect_argument_type_test() {
+  let function =
+    trick.anonymous({
+      use a <- trick.parameter("a", type_int)
+      a
+      |> trick.add(trick.int(1))
+      |> trick.expression
+      |> trick.function_body
+    })
+
+  let assert Error(error) =
+    function
+    |> trick.call([trick.float(1.0)])
+    |> trick.expression_to_string
+  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+}

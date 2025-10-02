@@ -10,16 +10,18 @@ import lazy_const
 import splitter
 
 pub opaque type Expression {
-  Expression(compile: fn(State) -> Result(#(State, CompiledExpression), Error))
+  Expression(compile: fn(State) -> Result(#(State, Compiled), Error))
 }
 
 pub type Error {
   TypeMismatch(expected: Type, got: Type)
   TupleIndexOutOfBounds(length: Int, index: Int)
   InvalidTupleAccess(type_: Type)
+  InvalidCall(type_: Type)
+  IncorrectNumberOfArguments(expected: Int, got: Int)
 }
 
-type CompiledExpression {
+type Compiled {
   Compiled(document: Document, type_: Type)
 }
 
@@ -27,6 +29,7 @@ pub type Type {
   Custom(module: String, name: String, generics: List(Type))
   TypeVariable(id: Int)
   Tuple(elements: List(Type))
+  Function(parameters: List(Type), return: Type)
 }
 
 type State {
@@ -56,20 +59,24 @@ fn type_variable(state: State) -> #(State, Type) {
 
 fn compile(
   expression: Expression,
-  continue: fn(CompiledExpression) -> Expression,
+  continue: fn(Compiled) -> Expression,
 ) -> Expression {
   try(expression.compile, continue)
 }
 
 fn compile_statement(
   statement: Statement,
-  continue: fn(CompiledExpression) -> Expression,
+  continue: fn(Compiled) -> Expression,
 ) -> Expression {
   try(statement.compile, continue)
 }
 
-fn return(value: CompiledExpression) -> Expression {
+fn return(value: Compiled) -> Expression {
   Expression(fn(state) { Ok(#(state, value)) })
+}
+
+fn error(error: Error) -> Expression {
+  Expression(fn(_state) { Error(error) })
 }
 
 fn pure(value: Result(a, Error)) -> fn(State) -> Result(#(State, a), Error) {
@@ -103,7 +110,7 @@ fn then(
 
 fn compile_expressions(
   list: List(Expression),
-  continue: fn(List(CompiledExpression)) -> Expression,
+  continue: fn(List(Compiled)) -> Expression,
 ) -> Expression {
   use state <- Expression
   use #(state, values) <- result.try(do_compile_expressions(state, list, []))
@@ -113,8 +120,8 @@ fn compile_expressions(
 fn do_compile_expressions(
   state: State,
   list: List(Expression),
-  out: List(CompiledExpression),
-) -> Result(#(State, List(CompiledExpression)), Error) {
+  out: List(Compiled),
+) -> Result(#(State, List(Compiled)), Error) {
   case list {
     [] -> Ok(#(state, list.reverse(out)))
     [first, ..rest] ->
@@ -141,6 +148,24 @@ fn fold_list(
   )
 
   continue(value).compile(state)
+}
+
+fn try_each(
+  list: List(a),
+  f: fn(a) -> fn(State) -> Result(#(State, _), Error),
+  continue: fn() -> Expression,
+) -> Expression {
+  use state <- Expression
+  use state <- result.try(
+    list.try_fold(list, state, fn(state, value) {
+      case f(value)(state) {
+        Ok(#(state, _)) -> Ok(state)
+        Error(error) -> Error(error)
+      }
+    }),
+  )
+
+  continue().compile(state)
 }
 
 fn unify(a: Type, with b: Type) -> fn(State) -> Result(#(State, Type), Error) {
@@ -191,7 +216,7 @@ fn unify_type_variable(
 fn unwrap_type(type_: Type) -> fn(State) -> #(State, Type) {
   fn(state: State) {
     let unwrapped = case type_ {
-      Custom(..) | Tuple(..) -> type_
+      Custom(..) | Tuple(..) | Function(..) -> type_
       TypeVariable(id:) ->
         case dict.get(state.resolved_variables, id) {
           Error(_) -> type_
@@ -203,7 +228,7 @@ fn unwrap_type(type_: Type) -> fn(State) -> #(State, Type) {
 }
 
 pub opaque type Statement {
-  Statement(compile: fn(State) -> Result(#(State, CompiledExpression), Error))
+  Statement(compile: fn(State) -> Result(#(State, Compiled), Error))
 }
 
 const width = 80
@@ -517,7 +542,10 @@ pub fn variable(
   let rest = continue(variable_expression)
   use rest <- compile_statement(rest)
 
-  return(Compiled(doc.prepend(declaration, to: rest.document), rest.type_))
+  return(Compiled(
+    doc.prepend(declaration, to: rest.document) |> doc.force_break,
+    rest.type_,
+  ))
 }
 
 fn grouped(documents: List(Document)) -> Document {
@@ -539,6 +567,7 @@ pub fn discard(discarded: Statement, continue: fn() -> Statement) -> Statement {
   use rest <- compile_statement(rest)
   [statement.document, doc.line, rest.document]
   |> doc.concat
+  |> doc.force_break
   |> Compiled(rest.type_)
   |> return
 }
@@ -567,11 +596,14 @@ pub fn assert_(condition: Expression, message: Option(Expression)) -> Statement 
   let assert_ = doc.prepend(doc.from_string("assert "), to: condition.document)
 
   case message {
-    None -> return(Compiled(assert_, type_nil))
+    None -> return(Compiled(doc.force_break(assert_), type_nil))
     Some(message) -> {
       use message <- compile(message)
       use _ <- try(unify(message.type_, type_string))
-      return(Compiled(add_message(assert_, message.document), type_nil))
+      return(Compiled(
+        add_message(assert_, message.document) |> doc.force_break,
+        type_nil,
+      ))
     }
   }
 }
@@ -600,7 +632,7 @@ pub fn tuple_index(tuple: Expression, index: Int) -> Expression {
   use unwrapped <- then(unwrap_type(tuple.type_))
   use type_ <- try(
     pure(case unwrapped {
-      Custom(..) as type_ | TypeVariable(..) as type_ ->
+      Custom(..) as type_ | TypeVariable(..) as type_ | Function(..) as type_ ->
         Error(InvalidTupleAccess(type_))
       Tuple(elements:) ->
         case list_at(elements, index, 0) {
@@ -623,12 +655,136 @@ fn list_at(list: List(a), index: Int, length: Int) -> Result(a, Int) {
     [_, ..list], _ -> list_at(list, index - 1, length + 1)
   }
 }
+
+pub opaque type FunctionBuilder {
+  FunctionBuilder(parameters: List(Parameter), body: Statement)
+}
+
+type Parameter {
+  Parameter(name: String, type_: Type)
+}
+
+pub fn anonymous(function: FunctionBuilder) -> Expression {
+  use body <- compile_statement(function.body)
+
+  let parameter_list =
+    [
+      doc.break("(", "("),
+      function.parameters
+        |> list.map(fn(parameter) { doc.from_string(parameter.name) })
+        |> doc.join(doc.break(", ", ",")),
+    ]
+    |> doc.concat
+    |> doc.nest(indent)
+    |> doc.append(doc.break("", ","))
+    |> doc.append(doc.from_string(")"))
+    |> doc.group
+
+  let body_doc =
+    [
+      doc.break("{ ", "{"),
+      body.document,
+    ]
+    |> doc.concat
+    |> doc.nest(indent)
+    |> doc.append(doc.break(" ", ""))
+    |> doc.append(doc.from_string("}"))
+    |> doc.group
+
+  let type_ =
+    Function(
+      parameters: list.map(function.parameters, fn(parameter) {
+        parameter.type_
+      }),
+      return: body.type_,
+    )
+
+  [doc.from_string("fn"), parameter_list, doc.from_string(" "), body_doc]
+  |> doc.concat
+  |> Compiled(type_)
+  |> return
+}
+
+pub fn parameter(
+  name: String,
+  type_: Type,
+  continue: fn(Expression) -> FunctionBuilder,
+) -> FunctionBuilder {
+  let expression = Compiled(doc.from_string(name), type_)
+  let function = continue(return(expression))
+
+  let parameter = Parameter(name, type_)
+  FunctionBuilder(..function, parameters: [parameter, ..function.parameters])
+}
+
+pub fn function_body(body: Statement) -> FunctionBuilder {
+  FunctionBuilder([], body)
+}
+
+pub fn call(function: Expression, arguments: List(Expression)) -> Expression {
+  use function <- compile(function)
+  use arguments <- compile_expressions(arguments)
+
+  use called_type <- then(unwrap_type(function.type_))
+
+  case called_type {
+    Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
+    Function(parameters:, return: return_type) ->
+      case list.strict_zip(arguments, parameters) {
+        Error(Nil) -> {
+          let expected_length = list.length(parameters)
+          let argument_length = list.length(arguments)
+          error(IncorrectNumberOfArguments(
+            expected: expected_length,
+            got: argument_length,
+          ))
+        }
+        Ok(zipped) -> {
+          use <- try_each(zipped, fn(pair) {
+            let #(arg, param) = pair
+            unify(arg.type_, with: param)
+          })
+
+          call_doc(arguments, function, return_type)
+        }
+      }
+    TypeVariable(_) -> {
+      let parameter_types = list.map(arguments, fn(argument) { argument.type_ })
+      use return_type <- then(type_variable)
+
+      let function_type =
+        Function(parameters: parameter_types, return: return_type)
+      use _ <- try(unify(called_type, function_type))
+
+      call_doc(arguments, function, return_type)
+    }
+  }
+}
+
+fn call_doc(
+  arguments: List(Compiled),
+  function: Compiled,
+  return_type: Type,
+) -> Expression {
+  [
+    doc.break("(", "("),
+    arguments
+      |> list.map(fn(arg) { arg.document })
+      |> doc.join(doc.break(", ", ",")),
+  ]
+  |> doc.concat
+  |> doc.nest(indent)
+  |> doc.prepend(function.document)
+  |> doc.append(doc.break("", ","))
+  |> doc.append(doc.from_string(")"))
+  |> doc.group
+  |> Compiled(return_type)
+  |> return
+}
 // TODO:
 // BitString
-// Call
 // Case
 // FieldAccess
-// Fn
 // FnCapture
 // Let assert
 // Let with patterns

@@ -1,0 +1,13 @@
+---
+version: 1.4.1
+title: long_call
+file: ./test/trick_test.gleam
+test_name: long_call_test
+---
+{
+  let concat = fn(a, b) { a <> b }
+  concat(
+    "This string is pretty long by itself, but",
+    " combined with this one it goes over the line limit",
+  )
+}
