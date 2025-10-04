@@ -576,14 +576,14 @@ pub fn block(inner: Statement) -> Expression {
   use inner <- compile_statement(inner)
 
   [
-    doc.from_string("{"),
-    doc.line,
+    doc.break("{ ", "{"),
     inner.document,
   ]
   |> doc.concat
   |> doc.nest(indent)
-  |> doc.append(doc.line)
+  |> doc.append(doc.break(" ", ""))
   |> doc.append(doc.from_string("}"))
+  |> doc.group
   |> Compiled(inner.type_)
   |> return
 }

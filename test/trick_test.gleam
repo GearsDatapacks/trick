@@ -570,3 +570,12 @@ pub fn incorrect_argument_type_test() {
     |> trick.expression_to_string
   assert error == trick.TypeMismatch(expected: type_int, got: type_float)
 }
+
+pub fn single_expression_block_test() {
+  trick.add(trick.int(1), trick.int(2))
+  |> trick.expression
+  |> trick.block
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("single_expression_block")
+}

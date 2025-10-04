@@ -1,0 +1,7 @@
+---
+version: 1.4.1
+title: single_expression_block
+file: ./test/trick_test.gleam
+test_name: single_expression_block_test
+---
+{ 1 + 2 }
