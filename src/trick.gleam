@@ -781,11 +781,91 @@ fn call_doc(
   |> Compiled(return_type)
   |> return
 }
+
+pub fn function_capture(
+  function: Expression,
+  before_hole: List(Expression),
+  after_hole: List(Expression),
+) -> Expression {
+  use function <- compile(function)
+  use before <- compile_expressions(before_hole)
+  use after <- compile_expressions(after_hole)
+
+  use called_type <- then(unwrap_type(function.type_))
+  use parameter_type <- then(type_variable)
+
+  let argument_types =
+    list.flatten([
+      list.map(before, fn(argument) { argument.type_ }),
+      [parameter_type],
+      list.map(after, fn(argument) { argument.type_ }),
+    ])
+
+  case called_type {
+    Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
+    Function(parameters:, return: return_type) ->
+      case list.strict_zip(argument_types, parameters) {
+        Error(Nil) -> {
+          let expected_length = list.length(parameters)
+          let argument_length = list.length(argument_types)
+          error(IncorrectNumberOfArguments(
+            expected: expected_length,
+            got: argument_length,
+          ))
+        }
+        Ok(zipped) -> {
+          use <- try_each(zipped, fn(pair) {
+            let #(a, b) = pair
+            unify(a, b)
+          })
+
+          capture_doc(function, before, after, parameter_type, return_type)
+        }
+      }
+    TypeVariable(_) -> {
+      use return_type <- then(type_variable)
+
+      let function_type =
+        Function(parameters: argument_types, return: return_type)
+      use _ <- try(unify(called_type, function_type))
+
+      capture_doc(function, before, after, parameter_type, return_type)
+    }
+  }
+}
+
+fn capture_doc(
+  function: Compiled,
+  before: List(Compiled),
+  after: List(Compiled),
+  parameter_type: Type,
+  return_type: Type,
+) -> Expression {
+  let type_ = Function(parameters: [parameter_type], return: return_type)
+
+  [
+    doc.break("(", "("),
+    before
+      |> list.map(fn(arg) { arg.document })
+      |> doc.join(doc.break(", ", ",")),
+    after
+      |> list.map(fn(arg) { arg.document })
+      |> list.prepend(doc.from_string("_"))
+      |> doc.join(doc.break(", ", ",")),
+  ]
+  |> doc.concat
+  |> doc.nest(indent)
+  |> doc.prepend(function.document)
+  |> doc.append(doc.break("", ","))
+  |> doc.append(doc.from_string(")"))
+  |> doc.group
+  |> Compiled(type_)
+  |> return
+}
 // TODO:
 // BitString
 // Case
 // FieldAccess
-// FnCapture
 // Let assert
 // Let with patterns
 // Pipes

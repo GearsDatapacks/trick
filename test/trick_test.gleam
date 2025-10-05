@@ -579,3 +579,76 @@ pub fn single_expression_block_test() {
   |> unwrap
   |> birdie.snap("single_expression_block")
 }
+
+pub fn function_capture_test() {
+  let add =
+    trick.anonymous({
+      use a <- trick.parameter("a", type_int)
+      use b <- trick.parameter("b", type_int)
+      trick.add(a, b) |> trick.expression |> trick.function_body
+    })
+
+  {
+    use add <- trick.variable("add", add)
+    use add_one <- trick.variable(
+      "add_one",
+      trick.function_capture(add, [], [trick.int(1)]),
+    )
+    trick.expression(trick.add(
+      trick.call(add_one, [trick.int(5)]),
+      trick.int(1),
+    ))
+  }
+  |> trick.block
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("function_capture")
+}
+
+pub fn invalid_function_capture_test() {
+  let assert Error(error) =
+    trick.int(10)
+    |> trick.function_capture([], [])
+    |> trick.expression_to_string
+  assert error == trick.InvalidCall(type_int)
+}
+
+pub fn incorrect_number_of_arguments_capture_test() {
+  let function =
+    trick.anonymous({
+      use a <- trick.parameter("a", type_int)
+      a
+      |> trick.add(trick.int(1))
+      |> trick.expression
+      |> trick.function_body
+    })
+
+  let assert Error(error) =
+    function
+    |> trick.function_capture([trick.int(1), trick.int(2)], [
+      trick.int(4),
+      trick.int(5),
+    ])
+    |> trick.expression_to_string
+  assert error == trick.IncorrectNumberOfArguments(expected: 1, got: 5)
+}
+
+pub fn incorrect_argument_type_capture_test() {
+  let function =
+    trick.anonymous({
+      use a <- trick.parameter("a", type_int)
+      use b <- trick.parameter("b", type_int)
+      use c <- trick.parameter("c", type_int)
+      a
+      |> trick.add(b)
+      |> trick.add(c)
+      |> trick.expression
+      |> trick.function_body
+    })
+
+  let assert Error(error) =
+    function
+    |> trick.function_capture([trick.int(1)], [trick.float(2.0)])
+    |> trick.expression_to_string
+  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+}
