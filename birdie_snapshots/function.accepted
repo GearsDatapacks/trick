@@ -1,0 +1,10 @@
+---
+version: 1.4.1
+title: function
+file: ./test/trick_test.gleam
+test_name: function_test
+---
+fn add(a, b) {
+  a + b
+}
+

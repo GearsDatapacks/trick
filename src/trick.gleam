@@ -13,6 +13,14 @@ pub opaque type Expression {
   Expression(compile: fn(State) -> Result(#(State, Compiled), Error))
 }
 
+pub opaque type Statement {
+  Statement(compile: fn(State) -> Result(#(State, Compiled), Error))
+}
+
+pub opaque type Definition {
+  Definition(compile: fn(State) -> Result(#(State, Compiled), Error))
+}
+
 pub type Error {
   TypeMismatch(expected: Type, got: Type)
   TupleIndexOutOfBounds(length: Int, index: Int)
@@ -69,6 +77,13 @@ fn compile_statement(
   continue: fn(Compiled) -> Expression,
 ) -> Expression {
   try(statement.compile, continue)
+}
+
+fn compile_definition(
+  definition: Definition,
+  continue: fn(Compiled) -> Expression,
+) -> Expression {
+  try(definition.compile, continue)
 }
 
 fn return(value: Compiled) -> Expression {
@@ -227,16 +242,19 @@ fn unwrap_type(type_: Type) -> fn(State) -> #(State, Type) {
   }
 }
 
-pub opaque type Statement {
-  Statement(compile: fn(State) -> Result(#(State, Compiled), Error))
-}
-
 const width = 80
 
 const indent = 2
 
 pub fn expression_to_string(expression: Expression) -> Result(String, Error) {
   case expression.compile(new_state()) {
+    Ok(#(_state, expression)) -> Ok(doc.to_string(expression.document, width))
+    Error(error) -> Error(error)
+  }
+}
+
+pub fn to_string(definition: Definition) -> Result(String, Error) {
+  case definition.compile(new_state()) {
     Ok(#(_state, expression)) -> Ok(doc.to_string(expression.document, width))
     Error(error) -> Error(error)
   }
@@ -861,6 +879,72 @@ fn capture_doc(
   |> doc.group
   |> Compiled(type_)
   |> return
+}
+
+fn definition(continue: fn() -> Expression) -> Definition {
+  Definition(continue().compile)
+}
+
+pub fn function(
+  name: String,
+  function: FunctionBuilder,
+  continue: fn() -> Definition,
+) -> Definition {
+  use <- definition
+  use body <- compile_statement(function.body)
+
+  let parameter_list =
+    [
+      doc.break("(", "("),
+      function.parameters
+        |> list.map(fn(parameter) { doc.from_string(parameter.name) })
+        |> doc.join(doc.break(", ", ",")),
+    ]
+    |> doc.concat
+    |> doc.nest(indent)
+    |> doc.append(doc.break("", ","))
+    |> doc.append(doc.from_string(")"))
+    |> doc.group
+
+  let body_doc =
+    [
+      doc.from_string("{"),
+      doc.line,
+      body.document,
+    ]
+    |> doc.concat
+    |> doc.nest(indent)
+    |> doc.append(doc.line)
+    |> doc.append(doc.from_string("}"))
+    |> doc.group
+
+  let type_ =
+    Function(
+      parameters: list.map(function.parameters, fn(parameter) {
+        parameter.type_
+      }),
+      return: body.type_,
+    )
+
+  use rest <- compile_definition(continue())
+
+  [
+    doc.from_string("fn "),
+    doc.from_string(name),
+    parameter_list,
+    doc.from_string(" "),
+    body_doc,
+    doc.line,
+    rest.document,
+  ]
+  |> doc.concat
+  |> Compiled(type_)
+  |> return
+}
+
+pub fn empty() -> Definition {
+  use <- definition
+  return(Compiled(doc.empty, type_nil))
 }
 // TODO:
 // BitString

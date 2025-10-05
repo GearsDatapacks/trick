@@ -652,3 +652,20 @@ pub fn incorrect_argument_type_capture_test() {
     |> trick.expression_to_string
   assert error == trick.TypeMismatch(expected: type_int, got: type_float)
 }
+
+pub fn function_test() {
+  trick.function(
+    "add",
+    {
+      use a <- trick.parameter("a", type_int)
+      use b <- trick.parameter("b", type_int)
+      trick.add(a, b)
+      |> trick.expression
+      |> trick.function_body
+    },
+    trick.empty,
+  )
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("function")
+}
