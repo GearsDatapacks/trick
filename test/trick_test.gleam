@@ -761,3 +761,68 @@ pub fn unlabelled_after_labelled_test() {
 
   assert error == trick.UnlabelledParameterAfterLabelledParameter
 }
+
+pub fn recursive_function_test() {
+  {
+    trick.function(
+      "add",
+      {
+        use a <- trick.labelled_parameter("a", "a", type_int)
+        use b <- trick.labelled_parameter("b", "b", type_int)
+        use add <- trick.recursive
+        trick.call(add, [a, b])
+        |> trick.expression
+      },
+      fn(_) { trick.empty() },
+    )
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("recursive_function")
+}
+
+pub fn recursive_function_has_correct_type_test() {
+  let assert Error(error) =
+    {
+      trick.function(
+        "add",
+        {
+          use a <- trick.labelled_parameter("a", "a", type_int)
+          use b <- trick.labelled_parameter("b", "b", type_int)
+          use add <- trick.recursive
+          trick.call(add, [a, b, trick.int(1)])
+          |> trick.expression
+        },
+        fn(_) { trick.empty() },
+      )
+    }
+    |> trick.to_string
+
+  assert error == trick.IncorrectNumberOfArguments(expected: 2, got: 3)
+}
+
+pub fn recursive_function_has_correct_type2_test() {
+  let assert Error(error) =
+    {
+      trick.function(
+        "add",
+        {
+          use a <- trick.labelled_parameter("a", "a", type_int)
+          use b <- trick.labelled_parameter("b", "b", type_int)
+          use add <- trick.recursive
+          use <- trick.discard(
+            trick.expression(trick.add_float(
+              trick.call(add, [trick.int(1), trick.int(2)]),
+              trick.float(1.0),
+            )),
+          )
+          trick.add(a, b)
+          |> trick.expression
+        },
+        fn(_) { trick.empty() },
+      )
+    }
+    |> trick.to_string
+
+  assert error == trick.TypeMismatch(expected: type_float, got: type_int)
+}

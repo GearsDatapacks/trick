@@ -1,0 +1,11 @@
+---
+version: 1.4.1
+title: recursive_function
+file: ./test/trick_test.gleam
+test_name: recursive_function_test
+---
+fn add(a a, b b) {
+  add(a, b)
+}
+
+

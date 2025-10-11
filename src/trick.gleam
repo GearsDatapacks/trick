@@ -680,7 +680,14 @@ pub type Unlabelled
 pub type Labelled
 
 pub opaque type FunctionBuilder(labelling) {
-  FunctionBuilder(parameters: List(Parameter), body: Statement)
+  FunctionBuilder(
+    compile: fn(State, String, Type, List(Type)) ->
+      Result(#(State, FunctionInformation), Error),
+  )
+}
+
+type FunctionInformation {
+  FunctionInformation(parameters: List(Parameter), body: Statement)
 }
 
 type Parameter {
@@ -688,6 +695,9 @@ type Parameter {
 }
 
 pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression {
+  use return_type <- then(type_variable)
+
+  use function <- try(function.compile(_, "", return_type, []))
   use body <- compile_statement(function.body)
 
   let parameter_list =
@@ -714,12 +724,14 @@ pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression {
     |> doc.append(doc.from_string("}"))
     |> doc.group
 
+  use return_type <- try(unify(body.type_, return_type))
+
   let type_ =
     Function(
       parameters: list.map(function.parameters, fn(parameter) {
         parameter.type_
       }),
-      return: body.type_,
+      return: return_type,
     )
 
   [doc.from_string("fn"), parameter_list, doc.from_string(" "), body_doc]
@@ -728,16 +740,45 @@ pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression {
   |> return
 }
 
+pub fn recursive(
+  continue: fn(Expression) -> Statement,
+) -> FunctionBuilder(Labelled) {
+  use state, name, return_type, parameter_types <- FunctionBuilder
+
+  let type_ = Function(parameters: parameter_types, return: return_type)
+
+  let expression = return(Compiled(doc.from_string(name), type_))
+
+  let body = continue(expression)
+
+  let _ = Ok(#(state, FunctionInformation([], body)))
+}
+
 pub fn parameter(
   name: String,
   type_: Type,
   continue: fn(Expression) -> FunctionBuilder(a),
 ) -> FunctionBuilder(a) {
+  use state, function_name, function_type, parameters <- FunctionBuilder
+
   let expression = Compiled(doc.from_string(name), type_)
   let function = continue(return(expression))
 
   let parameter = Parameter(name, None, type_)
-  FunctionBuilder(..function, parameters: [parameter, ..function.parameters])
+  use #(state, function) <- result.try(function.compile(
+    state,
+    function_name,
+    function_type,
+    list.append(parameters, [type_]),
+  ))
+
+  Ok(#(
+    state,
+    FunctionInformation(..function, parameters: [
+      parameter,
+      ..function.parameters
+    ]),
+  ))
 }
 
 pub fn labelled_parameter(
@@ -746,11 +787,26 @@ pub fn labelled_parameter(
   type_: Type,
   continue: fn(Expression) -> FunctionBuilder(a),
 ) -> FunctionBuilder(Labelled) {
+  use state, function_name, function_type, parameters <- FunctionBuilder
+
   let expression = Compiled(doc.from_string(name), type_)
   let function = continue(return(expression))
 
   let parameter = Parameter(name, Some(label), type_)
-  FunctionBuilder(..function, parameters: [parameter, ..function.parameters])
+  use #(state, function) <- result.try(function.compile(
+    state,
+    function_name,
+    function_type,
+    list.append(parameters, [type_]),
+  ))
+
+  Ok(#(
+    state,
+    FunctionInformation(..function, parameters: [
+      parameter,
+      ..function.parameters
+    ]),
+  ))
 }
 
 fn parameter_to_doc(parameter: Parameter) -> Document {
@@ -766,7 +822,9 @@ fn parameter_to_doc(parameter: Parameter) -> Document {
 }
 
 pub fn function_body(body: Statement) -> FunctionBuilder(Unlabelled) {
-  FunctionBuilder([], body)
+  FunctionBuilder(fn(state, _name, _type, _parameters) {
+    Ok(#(state, FunctionInformation([], body)))
+  })
 }
 
 pub fn call(function: Expression, arguments: List(Expression)) -> Expression {
@@ -921,6 +979,10 @@ pub fn function(
   continue: fn(Expression) -> Definition,
 ) -> Definition {
   use <- definition
+
+  use return_type <- then(type_variable)
+
+  use function <- try(function.compile(_, name, return_type, []))
   use body <- compile_statement(function.body)
 
   let parameters_are_valid =
@@ -960,12 +1022,14 @@ pub fn function(
     |> doc.append(doc.from_string("}"))
     |> doc.group
 
+  use return_type <- try(unify(body.type_, return_type))
+
   let type_ =
     Function(
       parameters: list.map(function.parameters, fn(parameter) {
         parameter.type_
       }),
-      return: body.type_,
+      return: return_type,
     )
 
   let function_name = return(Compiled(doc.from_string(name), type_))
