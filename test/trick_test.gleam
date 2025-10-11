@@ -663,9 +663,60 @@ pub fn function_test() {
       |> trick.expression
       |> trick.function_body
     },
-    trick.empty,
+    fn(_) { trick.empty() },
   )
   |> trick.to_string
   |> unwrap
   |> birdie.snap("function")
+}
+
+pub fn multiple_functions_test() {
+  {
+    use add <- trick.function("add", {
+      use a <- trick.parameter("a", type_int)
+      use b <- trick.parameter("b", type_int)
+      trick.add(a, b)
+      |> trick.expression
+      |> trick.function_body
+    })
+
+    use _main <- trick.function(
+      "main",
+      trick.function_body({
+        use <- trick.discard(
+          trick.expression(trick.echo_(
+            trick.call(add, [trick.int(1), trick.int(2)]),
+            None,
+          )),
+        )
+        trick.expression(trick.nil())
+      }),
+    )
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("multiple_functions")
+}
+
+pub fn multiple_functions_type_check_correctly_test() {
+  let assert Error(error) =
+    {
+      use add <- trick.function("add", {
+        use a <- trick.parameter("a", type_int)
+        use b <- trick.parameter("b", type_int)
+        trick.add(a, b)
+        |> trick.expression
+        |> trick.function_body
+      })
+
+      trick.call(add, [trick.int(1), trick.int(2), trick.int(3)])
+      |> trick.expression
+      |> trick.function_body
+      |> trick.function("main", _, fn(_main) { trick.empty() })
+    }
+    |> trick.to_string
+
+  assert error == trick.IncorrectNumberOfArguments(expected: 2, got: 3)
 }

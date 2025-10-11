@@ -1,0 +1,16 @@
+---
+version: 1.4.1
+title: multiple_functions
+file: ./test/trick_test.gleam
+test_name: multiple_functions_test
+---
+fn add(a, b) {
+  a + b
+}
+
+fn main() {
+  echo add(1, 2)
+  Nil
+}
+
+

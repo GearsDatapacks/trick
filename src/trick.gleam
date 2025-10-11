@@ -888,7 +888,7 @@ fn definition(continue: fn() -> Expression) -> Definition {
 pub fn function(
   name: String,
   function: FunctionBuilder,
-  continue: fn() -> Definition,
+  continue: fn(Expression) -> Definition,
 ) -> Definition {
   use <- definition
   use body <- compile_statement(function.body)
@@ -926,7 +926,9 @@ pub fn function(
       return: body.type_,
     )
 
-  use rest <- compile_definition(continue())
+  let function_name = return(Compiled(doc.from_string(name), type_))
+
+  use rest <- compile_definition(continue(function_name))
 
   [
     doc.from_string("fn "),
@@ -934,7 +936,7 @@ pub fn function(
     parameter_list,
     doc.from_string(" "),
     body_doc,
-    doc.line,
+    doc.lines(2),
     rest.document,
   ]
   |> doc.concat
