@@ -1215,12 +1215,3 @@ fn letter(id: Int) -> String {
     _ -> "z"
   }
 }
-// TODO:
-// BitString
-// Case
-// FieldAccess
-// Let assert
-// Let with patterns
-// Pipes
-// RecordUpdate
-// Use
