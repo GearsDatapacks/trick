@@ -4,9 +4,9 @@ title: constant_used_in_function
 file: ./test/trick_test.gleam
 test_name: constant_used_in_function_test
 ---
-const pi = 3.14
+const pi: Float = 3.14
 
-fn area(radius) {
+fn area(radius: Float) -> Float {
   pi *. radius *. radius
 }
 

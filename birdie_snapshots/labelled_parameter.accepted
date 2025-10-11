@@ -4,11 +4,11 @@ title: labelled_parameter
 file: ./test/trick_test.gleam
 test_name: labelled_parameter_test
 ---
-fn add(a a, b b) {
+fn add(a a: Int, b b: Int) -> Int {
   a + b
 }
 
-fn main() {
+fn main() -> Int {
   add(1, 2)
 }
 

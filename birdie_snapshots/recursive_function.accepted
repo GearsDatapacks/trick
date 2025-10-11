@@ -4,7 +4,7 @@ title: recursive_function
 file: ./test/trick_test.gleam
 test_name: recursive_function_test
 ---
-fn add(a a, b b) {
+fn add(a a: Int, b b: Int) -> a {
   add(a, b)
 }
 

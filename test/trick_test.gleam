@@ -904,3 +904,28 @@ pub fn constant_type_checks_correctly_test() {
 
   assert error == trick.TypeMismatch(expected: type_int, got: type_float)
 }
+
+pub fn type_annotation_printing_test() {
+  trick.function(
+    "main",
+    {
+      use tuple <- trick.parameter(
+        "tuple",
+        trick.Tuple([type_int, type_float, type_string]),
+      )
+      use function <- trick.parameter(
+        "function",
+        trick.Function([type_int, type_int], type_float),
+      )
+      use generic <- trick.parameter("generic", trick.TypeVariable(82))
+      [tuple, function, generic]
+      |> trick.tuple
+      |> trick.expression
+      |> trick.function_body
+    },
+    fn(_) { trick.empty() },
+  )
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("type_annotation_printing")
+}

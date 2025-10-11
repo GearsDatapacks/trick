@@ -4,7 +4,7 @@ title: function
 file: ./test/trick_test.gleam
 test_name: function_test
 ---
-fn add(a, b) {
+fn add(a: Int, b: Int) -> Int {
   a + b
 }
 

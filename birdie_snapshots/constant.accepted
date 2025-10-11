@@ -4,6 +4,6 @@ title: constant
 file: ./test/trick_test.gleam
 test_name: constant_test
 ---
-const pi = 3.14
+const pi: Float = 3.14
 
 

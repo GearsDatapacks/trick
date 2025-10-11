@@ -6,6 +6,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import lazy_const
 import splitter
 
@@ -863,12 +864,19 @@ pub fn labelled_parameter(
 
 fn parameter_to_doc(parameter: Parameter) -> Document {
   case parameter.label {
-    None -> doc.from_string(parameter.name)
+    None ->
+      doc.concat([
+        doc.from_string(parameter.name),
+        doc.from_string(": "),
+        doc.from_string(print_type(parameter.type_)),
+      ])
     Some(label) ->
       doc.concat([
         doc.from_string(label),
         doc.from_string(" "),
         doc.from_string(parameter.name),
+        doc.from_string(": "),
+        doc.from_string(print_type(parameter.type_)),
       ])
   }
 }
@@ -1095,6 +1103,8 @@ pub fn function(
     doc.from_string("fn "),
     doc.from_string(name),
     parameter_list,
+    doc.from_string(" -> "),
+    doc.from_string(print_type(return_type)),
     doc.from_string(" "),
     body_doc,
     doc.lines(2),
@@ -1126,6 +1136,8 @@ pub fn constant(
   [
     doc.from_string("const "),
     doc.from_string(name),
+    doc.from_string(": "),
+    doc.from_string(print_type(value.type_)),
     doc.from_string(" = "),
     value.document,
     doc.lines(2),
@@ -1134,6 +1146,74 @@ pub fn constant(
   |> doc.concat
   |> Compiled(value.type_)
   |> return
+}
+
+fn print_type(type_: Type) -> String {
+  case type_ {
+    Custom(module: _, name:, generics:) ->
+      case generics {
+        [] -> name
+        _ ->
+          name
+          <> "("
+          <> string.join(list.map(generics, print_type), ", ")
+          <> ")"
+      }
+    Function(parameters:, return:) ->
+      "fn("
+      <> string.join(list.map(parameters, print_type), ", ")
+      <> ") -> "
+      <> print_type(return)
+    Tuple(elements:) ->
+      "#(" <> string.join(list.map(elements, print_type), ", ") <> ")"
+    TypeVariable(id:) -> generate_type_variable_name(id)
+  }
+}
+
+fn generate_type_variable_name(id: Int) -> String {
+  generate_type_variable_name_loop(id, "")
+}
+
+fn generate_type_variable_name_loop(id: Int, name: String) -> String {
+  case id < 26 {
+    True -> letter(id) <> name
+    False -> {
+      let name = letter(id % 26) <> name
+      let id = id / 26
+      generate_type_variable_name_loop(id, name)
+    }
+  }
+}
+
+fn letter(id: Int) -> String {
+  case id {
+    0 -> "a"
+    1 -> "b"
+    2 -> "c"
+    3 -> "d"
+    4 -> "e"
+    5 -> "f"
+    6 -> "g"
+    7 -> "h"
+    8 -> "i"
+    9 -> "j"
+    10 -> "k"
+    11 -> "l"
+    12 -> "m"
+    13 -> "n"
+    14 -> "o"
+    15 -> "p"
+    16 -> "q"
+    17 -> "r"
+    18 -> "s"
+    19 -> "t"
+    20 -> "u"
+    21 -> "v"
+    22 -> "w"
+    23 -> "x"
+    24 -> "y"
+    _ -> "z"
+  }
 }
 // TODO:
 // BitString

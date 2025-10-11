@@ -5,7 +5,7 @@ file: ./test/trick_test.gleam
 test_name: long_call_test
 ---
 {
-  let concat = fn(a, b) { a <> b }
+  let concat = fn(a: String, b: String) { a <> b }
   concat(
     "This string is pretty long by itself, but",
     " combined with this one it goes over the line limit",

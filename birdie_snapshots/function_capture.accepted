@@ -5,7 +5,7 @@ file: ./test/trick_test.gleam
 test_name: function_capture_test
 ---
 {
-  let add = fn(a, b) { a + b }
+  let add = fn(a: Int, b: Int) { a + b }
   let add_one = add(_, 1)
   add_one(5) + 1
 }

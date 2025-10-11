@@ -4,7 +4,7 @@ title: anonymous_function_with_multiple_statements
 file: ./test/trick_test.gleam
 test_name: anonymous_function_with_multiple_statements_test
 ---
-fn(a, b) {
+fn(a: Int, b: Int) {
   let c = a + b
   echo c
   c

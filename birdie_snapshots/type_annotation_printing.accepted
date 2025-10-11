@@ -1,0 +1,15 @@
+---
+version: 1.4.1
+title: type_annotation_printing
+file: ./test/trick_test.gleam
+test_name: type_annotation_printing_test
+---
+fn main(
+  tuple: #(Int, Float, String),
+  function: fn(Int, Int) -> Float,
+  generic: de,
+) -> #(#(Int, Float, String), fn(Int, Int) -> Float, de) {
+  #(tuple, function, generic)
+}
+
+

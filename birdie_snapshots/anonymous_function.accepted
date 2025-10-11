@@ -5,6 +5,6 @@ file: ./test/trick_test.gleam
 test_name: anonymous_function_test
 ---
 {
-  let f = fn(a, b) { a + b }
+  let f = fn(a: Int, b: Int) { a + b }
   f(1, 2)
 }

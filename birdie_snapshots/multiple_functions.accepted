@@ -4,11 +4,11 @@ title: multiple_functions
 file: ./test/trick_test.gleam
 test_name: multiple_functions_test
 ---
-fn add(a, b) {
+fn add(a: Int, b: Int) -> Int {
   a + b
 }
 
-fn main() {
+fn main() -> Nil {
   echo add(1, 2)
   Nil
 }

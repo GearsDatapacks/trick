@@ -4,12 +4,12 @@ title: constant_referencing_function
 file: ./test/trick_test.gleam
 test_name: constant_referencing_function_test
 ---
-const pi = 3.14
+const pi: Float = 3.14
 
-fn area(radius) {
+fn area(radius: Float) -> Float {
   pi *. radius *. radius
 }
 
-const area2 = area
+const area2: fn(Float) -> Float = area
 
 

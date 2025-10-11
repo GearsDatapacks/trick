@@ -4,10 +4,10 @@ title: multiple_constants
 file: ./test/trick_test.gleam
 test_name: multiple_constants_test
 ---
-const pi = 3.14
+const pi: Float = 3.14
 
-const e = 2.71
+const e: Float = 2.71
 
-const mathematical_constants = #(e, pi)
+const mathematical_constants: #(Float, Float) = #(e, pi)
 
 
