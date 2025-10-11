@@ -27,6 +27,7 @@ pub type Error {
   InvalidTupleAccess(type_: Type)
   InvalidCall(type_: Type)
   IncorrectNumberOfArguments(expected: Int, got: Int)
+  UnlabelledParameterAfterLabelledParameter
 }
 
 type Compiled {
@@ -674,22 +675,26 @@ fn list_at(list: List(a), index: Int, length: Int) -> Result(a, Int) {
   }
 }
 
-pub opaque type FunctionBuilder {
+pub type Unlabelled
+
+pub type Labelled
+
+pub opaque type FunctionBuilder(labelling) {
   FunctionBuilder(parameters: List(Parameter), body: Statement)
 }
 
 type Parameter {
-  Parameter(name: String, type_: Type)
+  Parameter(name: String, label: Option(String), type_: Type)
 }
 
-pub fn anonymous(function: FunctionBuilder) -> Expression {
+pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression {
   use body <- compile_statement(function.body)
 
   let parameter_list =
     [
       doc.break("(", "("),
       function.parameters
-        |> list.map(fn(parameter) { doc.from_string(parameter.name) })
+        |> list.map(parameter_to_doc)
         |> doc.join(doc.break(", ", ",")),
     ]
     |> doc.concat
@@ -726,16 +731,41 @@ pub fn anonymous(function: FunctionBuilder) -> Expression {
 pub fn parameter(
   name: String,
   type_: Type,
-  continue: fn(Expression) -> FunctionBuilder,
-) -> FunctionBuilder {
+  continue: fn(Expression) -> FunctionBuilder(a),
+) -> FunctionBuilder(a) {
   let expression = Compiled(doc.from_string(name), type_)
   let function = continue(return(expression))
 
-  let parameter = Parameter(name, type_)
+  let parameter = Parameter(name, None, type_)
   FunctionBuilder(..function, parameters: [parameter, ..function.parameters])
 }
 
-pub fn function_body(body: Statement) -> FunctionBuilder {
+pub fn labelled_parameter(
+  label: String,
+  name: String,
+  type_: Type,
+  continue: fn(Expression) -> FunctionBuilder(a),
+) -> FunctionBuilder(Labelled) {
+  let expression = Compiled(doc.from_string(name), type_)
+  let function = continue(return(expression))
+
+  let parameter = Parameter(name, Some(label), type_)
+  FunctionBuilder(..function, parameters: [parameter, ..function.parameters])
+}
+
+fn parameter_to_doc(parameter: Parameter) -> Document {
+  case parameter.label {
+    None -> doc.from_string(parameter.name)
+    Some(label) ->
+      doc.concat([
+        doc.from_string(label),
+        doc.from_string(" "),
+        doc.from_string(parameter.name),
+      ])
+  }
+}
+
+pub fn function_body(body: Statement) -> FunctionBuilder(Unlabelled) {
   FunctionBuilder([], body)
 }
 
@@ -887,17 +917,29 @@ fn definition(continue: fn() -> Expression) -> Definition {
 
 pub fn function(
   name: String,
-  function: FunctionBuilder,
+  function: FunctionBuilder(a),
   continue: fn(Expression) -> Definition,
 ) -> Definition {
   use <- definition
   use body <- compile_statement(function.body)
 
+  let parameters_are_valid =
+    list.try_fold(function.parameters, False, fn(found_labelled, parameter) {
+      case parameter.label {
+        None if found_labelled ->
+          Error(UnlabelledParameterAfterLabelledParameter)
+        None -> Ok(False)
+        Some(_) -> Ok(True)
+      }
+    })
+
+  use _ <- try(pure(parameters_are_valid))
+
   let parameter_list =
     [
       doc.break("(", "("),
       function.parameters
-        |> list.map(fn(parameter) { doc.from_string(parameter.name) })
+        |> list.map(parameter_to_doc)
         |> doc.join(doc.break(", ", ",")),
     ]
     |> doc.concat

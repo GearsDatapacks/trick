@@ -720,3 +720,44 @@ pub fn multiple_functions_type_check_correctly_test() {
 
   assert error == trick.IncorrectNumberOfArguments(expected: 2, got: 3)
 }
+
+pub fn labelled_parameter_test() {
+  {
+    use add <- trick.function("add", {
+      use a <- trick.labelled_parameter("a", "a", type_int)
+      use b <- trick.labelled_parameter("b", "b", type_int)
+      trick.add(a, b)
+      |> trick.expression
+      |> trick.function_body
+    })
+
+    trick.call(add, [trick.int(1), trick.int(2)])
+    |> trick.expression
+    |> trick.function_body
+    |> trick.function("main", _, fn(_main) { trick.empty() })
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("labelled_parameter")
+}
+
+pub fn unlabelled_after_labelled_test() {
+  let assert Error(error) =
+    trick.function(
+      "add",
+      {
+        use a <- trick.labelled_parameter("a", "a", type_int)
+        use b <- trick.labelled_parameter("b", "b", type_int)
+        use c <- trick.parameter("c", type_int)
+        a
+        |> trick.add(b)
+        |> trick.add(c)
+        |> trick.expression
+        |> trick.function_body
+      },
+      fn(_add) { trick.empty() },
+    )
+    |> trick.to_string
+
+  assert error == trick.UnlabelledParameterAfterLabelledParameter
+}

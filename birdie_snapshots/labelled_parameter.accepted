@@ -1,0 +1,15 @@
+---
+version: 1.4.1
+title: labelled_parameter
+file: ./test/trick_test.gleam
+test_name: labelled_parameter_test
+---
+fn add(a a, b b) {
+  a + b
+}
+
+fn main() {
+  add(1, 2)
+}
+
+
