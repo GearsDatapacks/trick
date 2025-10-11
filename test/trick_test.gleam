@@ -826,3 +826,81 @@ pub fn recursive_function_has_correct_type2_test() {
 
   assert error == trick.TypeMismatch(expected: type_float, got: type_int)
 }
+
+pub fn constant_test() {
+  trick.constant("pi", trick.float(3.14), fn(_) { trick.empty() })
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("constant")
+}
+
+pub fn multiple_constants_test() {
+  {
+    use pi <- trick.constant("pi", trick.float(3.14))
+    use e <- trick.constant("e", trick.float(2.71))
+    use _mathematical_constants <- trick.constant(
+      "mathematical_constants",
+      trick.tuple([e, pi]),
+    )
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("multiple_constants")
+}
+
+pub fn constant_used_in_function_test() {
+  {
+    use pi <- trick.constant("pi", trick.float(3.14))
+    use _area <- trick.function("area", {
+      use radius <- trick.parameter("radius", type_float)
+      pi
+      |> trick.multiply_float(radius)
+      |> trick.multiply_float(radius)
+      |> trick.expression
+      |> trick.function_body
+    })
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("constant_used_in_function")
+}
+
+pub fn constant_referencing_function_test() {
+  {
+    use pi <- trick.constant("pi", trick.float(3.14))
+    use area <- trick.function("area", {
+      use radius <- trick.parameter("radius", type_float)
+      pi
+      |> trick.multiply_float(radius)
+      |> trick.multiply_float(radius)
+      |> trick.expression
+      |> trick.function_body
+    })
+    use _area2 <- trick.constant("area2", area)
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("constant_referencing_function")
+}
+
+pub fn constant_type_checks_correctly_test() {
+  let assert Error(error) =
+    {
+      use pi <- trick.constant("pi", trick.float(3.14))
+      use _area <- trick.function("area", {
+        use radius <- trick.parameter("radius", type_int)
+        pi
+        |> trick.multiply(radius)
+        |> trick.multiply(radius)
+        |> trick.expression
+        |> trick.function_body
+      })
+      trick.empty()
+    }
+    |> trick.to_string
+
+  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+}

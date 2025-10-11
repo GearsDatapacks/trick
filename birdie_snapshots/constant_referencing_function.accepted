@@ -1,0 +1,15 @@
+---
+version: 1.4.1
+title: constant_referencing_function
+file: ./test/trick_test.gleam
+test_name: constant_referencing_function_test
+---
+const pi = 3.14
+
+fn area(radius) {
+  pi *. radius *. radius
+}
+
+const area2 = area
+
+

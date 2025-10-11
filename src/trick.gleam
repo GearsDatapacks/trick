@@ -9,7 +9,11 @@ import gleam/result
 import lazy_const
 import splitter
 
-pub opaque type Expression {
+pub type Constant
+
+pub type Variable
+
+pub opaque type Expression(a) {
   Expression(compile: fn(State) -> Result(#(State, Compiled), Error))
 }
 
@@ -67,31 +71,31 @@ fn type_variable(state: State) -> #(State, Type) {
 }
 
 fn compile(
-  expression: Expression,
-  continue: fn(Compiled) -> Expression,
-) -> Expression {
+  expression: Expression(_),
+  continue: fn(Compiled) -> Expression(_),
+) -> Expression(_) {
   try(expression.compile, continue)
 }
 
 fn compile_statement(
   statement: Statement,
-  continue: fn(Compiled) -> Expression,
-) -> Expression {
+  continue: fn(Compiled) -> Expression(_),
+) -> Expression(_) {
   try(statement.compile, continue)
 }
 
 fn compile_definition(
   definition: Definition,
-  continue: fn(Compiled) -> Expression,
-) -> Expression {
+  continue: fn(Compiled) -> Expression(_),
+) -> Expression(_) {
   try(definition.compile, continue)
 }
 
-fn return(value: Compiled) -> Expression {
+fn return(value: Compiled) -> Expression(a) {
   Expression(fn(state) { Ok(#(state, value)) })
 }
 
-fn error(error: Error) -> Expression {
+fn error(error: Error) -> Expression(a) {
   Expression(fn(_state) { Error(error) })
 }
 
@@ -106,8 +110,8 @@ fn pure(value: Result(a, Error)) -> fn(State) -> Result(#(State, a), Error) {
 
 fn try(
   f: fn(State) -> Result(#(State, a), Error),
-  continue: fn(a) -> Expression,
-) -> Expression {
+  continue: fn(a) -> Expression(_),
+) -> Expression(_) {
   use state <- Expression
   case f(state) {
     Error(error) -> Error(error)
@@ -117,17 +121,17 @@ fn try(
 
 fn then(
   f: fn(State) -> #(State, a),
-  continue: fn(a) -> Expression,
-) -> Expression {
+  continue: fn(a) -> Expression(_),
+) -> Expression(_) {
   use state <- Expression
   let #(state, value) = f(state)
   continue(value).compile(state)
 }
 
 fn compile_expressions(
-  list: List(Expression),
-  continue: fn(List(Compiled)) -> Expression,
-) -> Expression {
+  list: List(Expression(a)),
+  continue: fn(List(Compiled)) -> Expression(a),
+) -> Expression(a) {
   use state <- Expression
   use #(state, values) <- result.try(do_compile_expressions(state, list, []))
   continue(values).compile(state)
@@ -135,7 +139,7 @@ fn compile_expressions(
 
 fn do_compile_expressions(
   state: State,
-  list: List(Expression),
+  list: List(Expression(a)),
   out: List(Compiled),
 ) -> Result(#(State, List(Compiled)), Error) {
   case list {
@@ -153,8 +157,8 @@ fn fold_list(
   list: List(a),
   initial: fn(State) -> #(State, b),
   f: fn(b, a) -> fn(State) -> Result(#(State, b), Error),
-  continue: fn(b) -> Expression,
-) -> Expression {
+  continue: fn(b) -> Expression(_),
+) -> Expression(_) {
   use state <- Expression
   use #(state, value) <- result.try(
     list.try_fold(list, initial(state), fn(acc, value) {
@@ -169,8 +173,8 @@ fn fold_list(
 fn try_each(
   list: List(a),
   f: fn(a) -> fn(State) -> Result(#(State, _), Error),
-  continue: fn() -> Expression,
-) -> Expression {
+  continue: fn() -> Expression(a),
+) -> Expression(a) {
   use state <- Expression
   use state <- result.try(
     list.try_fold(list, state, fn(state, value) {
@@ -247,7 +251,7 @@ const width = 80
 
 const indent = 2
 
-pub fn expression_to_string(expression: Expression) -> Result(String, Error) {
+pub fn expression_to_string(expression: Expression(a)) -> Result(String, Error) {
   case expression.compile(new_state()) {
     Ok(#(_state, expression)) -> Ok(doc.to_string(expression.document, width))
     Error(error) -> Error(error)
@@ -265,7 +269,7 @@ fn new_state() -> State {
   State(dict.new(), 0)
 }
 
-pub fn int(value: Int) -> Expression {
+pub fn int(value: Int) -> Expression(a) {
   value
   |> int.to_string
   |> doc.from_string
@@ -273,7 +277,7 @@ pub fn int(value: Int) -> Expression {
   |> return
 }
 
-pub fn float(value: Float) -> Expression {
+pub fn float(value: Float) -> Expression(a) {
   value
   |> float.to_string
   |> doc.from_string
@@ -281,7 +285,7 @@ pub fn float(value: Float) -> Expression {
   |> return
 }
 
-pub fn string(value: String) -> Expression {
+pub fn string(value: String) -> Expression(a) {
   value
   |> escape_string_literal
   |> doc.from_string
@@ -289,7 +293,7 @@ pub fn string(value: String) -> Expression {
   |> return
 }
 
-pub fn bool(value: Bool) -> Expression {
+pub fn bool(value: Bool) -> Expression(a) {
   value
   |> bool.to_string
   |> doc.from_string
@@ -297,7 +301,7 @@ pub fn bool(value: Bool) -> Expression {
   |> return
 }
 
-pub fn nil() -> Expression {
+pub fn nil() -> Expression(a) {
   "Nil"
   |> doc.from_string
   |> Compiled(type_nil)
@@ -330,12 +334,12 @@ fn escape_string_literal_loop(
 }
 
 fn binary_operator(
-  left: Expression,
+  left: Expression(_),
   operator: String,
-  right: Expression,
+  right: Expression(_),
   operand_type: Type,
   result_type: Type,
-) -> Expression {
+) -> Expression(_) {
   use left <- compile(left)
   use right <- compile(right)
   use _ <- try(unify(left.type_, operand_type))
@@ -347,107 +351,149 @@ fn binary_operator(
   |> return
 }
 
-pub fn add(left: Expression, right: Expression) -> Expression {
+pub fn add(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "+", right, type_int, type_int)
 }
 
-pub fn add_float(left: Expression, right: Expression) -> Expression {
+pub fn add_float(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "+.", right, type_float, type_float)
 }
 
-pub fn subtract(left: Expression, right: Expression) -> Expression {
+pub fn subtract(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "-", right, type_int, type_int)
 }
 
-pub fn subtract_float(left: Expression, right: Expression) -> Expression {
+pub fn subtract_float(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "-.", right, type_float, type_float)
 }
 
-pub fn multiply(left: Expression, right: Expression) -> Expression {
+pub fn multiply(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "*", right, type_int, type_int)
 }
 
-pub fn multiply_float(left: Expression, right: Expression) -> Expression {
+pub fn multiply_float(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "*.", right, type_float, type_float)
 }
 
-pub fn divide(left: Expression, right: Expression) -> Expression {
+pub fn divide(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "/", right, type_int, type_int)
 }
 
-pub fn divide_float(left: Expression, right: Expression) -> Expression {
+pub fn divide_float(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "/.", right, type_float, type_float)
 }
 
-pub fn remainder(left: Expression, right: Expression) -> Expression {
+pub fn remainder(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "%", right, type_int, type_int)
 }
 
-pub fn concatenate(left: Expression, right: Expression) -> Expression {
+pub fn concatenate(left: Expression(a), right: Expression(a)) -> Expression(a) {
   binary_operator(left, "<>", right, type_string, type_string)
 }
 
-pub fn and(left: Expression, right: Expression) -> Expression {
+pub fn and(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "&&", right, type_bool, type_bool)
 }
 
-pub fn or(left: Expression, right: Expression) -> Expression {
+pub fn or(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "||", right, type_bool, type_bool)
 }
 
-pub fn equal(left: Expression, right: Expression) -> Expression {
+pub fn equal(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   use type_ <- then(type_variable)
   binary_operator(left, "==", right, type_, type_bool)
 }
 
-pub fn not_equal(left: Expression, right: Expression) -> Expression {
+pub fn not_equal(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   use type_ <- then(type_variable)
   binary_operator(left, "!=", right, type_, type_bool)
 }
 
-pub fn less_than(left: Expression, right: Expression) -> Expression {
+pub fn less_than(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "<", right, type_int, type_bool)
 }
 
-pub fn less_than_float(left: Expression, right: Expression) -> Expression {
+pub fn less_than_float(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "<.", right, type_float, type_bool)
 }
 
-pub fn less_than_or_equal(left: Expression, right: Expression) -> Expression {
+pub fn less_than_or_equal(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "<=", right, type_int, type_bool)
 }
 
 pub fn less_than_or_equal_float(
-  left: Expression,
-  right: Expression,
-) -> Expression {
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "<=.", right, type_float, type_bool)
 }
 
-pub fn greater_than(left: Expression, right: Expression) -> Expression {
+pub fn greater_than(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, ">", right, type_int, type_bool)
 }
 
-pub fn greater_than_float(left: Expression, right: Expression) -> Expression {
+pub fn greater_than_float(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, ">.", right, type_float, type_bool)
 }
 
-pub fn greater_than_or_equal(left: Expression, right: Expression) -> Expression {
+pub fn greater_than_or_equal(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, ">=", right, type_int, type_bool)
 }
 
 pub fn greater_than_or_equal_float(
-  left: Expression,
-  right: Expression,
-) -> Expression {
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, ">=.", right, type_float, type_bool)
 }
 
 fn unary_operator(
   operator: String,
-  value: Expression,
+  value: Expression(_),
   type_: Type,
-) -> Expression {
+) -> Expression(_) {
   use value <- compile(value)
   use type_ <- try(unify(value.type_, type_))
   [doc.from_string(operator), value.document]
@@ -456,15 +502,15 @@ fn unary_operator(
   |> return
 }
 
-pub fn negate_int(value: Expression) -> Expression {
+pub fn negate_int(value: Expression(a)) -> Expression(Variable) {
   unary_operator("-", value, type_int)
 }
 
-pub fn negate_bool(value: Expression) -> Expression {
+pub fn negate_bool(value: Expression(a)) -> Expression(Variable) {
   unary_operator("!", value, type_bool)
 }
 
-pub fn list(values: List(Expression)) -> Expression {
+pub fn list(values: List(Expression(a))) -> Expression(a) {
   use values <- compile_expressions(values)
 
   use element_type <- fold_list(values, type_variable, fn(type_, value) {
@@ -493,7 +539,7 @@ fn add_message(document: Document, message: Document) -> Document {
   |> grouped
 }
 
-pub fn panic_(message: Option(Expression)) -> Expression {
+pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
   use type_ <- then(type_variable)
   case message {
     None -> return(Compiled(doc.from_string("panic"), type_))
@@ -508,7 +554,7 @@ pub fn panic_(message: Option(Expression)) -> Expression {
   }
 }
 
-pub fn todo_(message: Option(Expression)) -> Expression {
+pub fn todo_(message: Option(Expression(a))) -> Expression(Variable) {
   use type_ <- then(type_variable)
   case message {
     None -> return(Compiled(doc.from_string("todo"), type_))
@@ -523,7 +569,10 @@ pub fn todo_(message: Option(Expression)) -> Expression {
   }
 }
 
-pub fn echo_(value: Expression, message: Option(Expression)) -> Expression {
+pub fn echo_(
+  value: Expression(a),
+  message: Option(Expression(a)),
+) -> Expression(Variable) {
   use value <- compile(value)
 
   let echo_ = doc.prepend(doc.from_string("echo "), to: value.document)
@@ -540,8 +589,8 @@ pub fn echo_(value: Expression, message: Option(Expression)) -> Expression {
 
 pub fn variable(
   name: String,
-  value: Expression,
-  continue: fn(Expression) -> Statement,
+  value: Expression(a),
+  continue: fn(Expression(Variable)) -> Statement,
 ) -> Statement {
   use <- statement
   use value <- compile(value)
@@ -571,11 +620,11 @@ fn grouped(documents: List(Document)) -> Document {
   documents |> doc.concat |> doc.nest(indent) |> doc.group
 }
 
-fn statement(f: fn() -> Expression) -> Statement {
+fn statement(f: fn() -> Expression(a)) -> Statement {
   expression(f())
 }
 
-pub fn expression(expression: Expression) -> Statement {
+pub fn expression(expression: Expression(a)) -> Statement {
   Statement(expression.compile)
 }
 
@@ -591,7 +640,7 @@ pub fn discard(discarded: Statement, continue: fn() -> Statement) -> Statement {
   |> return
 }
 
-pub fn block(inner: Statement) -> Expression {
+pub fn block(inner: Statement) -> Expression(Variable) {
   use inner <- compile_statement(inner)
 
   [
@@ -607,7 +656,10 @@ pub fn block(inner: Statement) -> Expression {
   |> return
 }
 
-pub fn assert_(condition: Expression, message: Option(Expression)) -> Statement {
+pub fn assert_(
+  condition: Expression(a),
+  message: Option(Expression(a)),
+) -> Statement {
   use <- statement
   use condition <- compile(condition)
   use _ <- try(unify(condition.type_, type_bool))
@@ -627,7 +679,7 @@ pub fn assert_(condition: Expression, message: Option(Expression)) -> Statement 
   }
 }
 
-pub fn tuple(values: List(Expression)) -> Expression {
+pub fn tuple(values: List(Expression(a))) -> Expression(a) {
   use values <- compile_expressions(values)
 
   let #(documents, types) =
@@ -646,7 +698,7 @@ pub fn tuple(values: List(Expression)) -> Expression {
   |> return
 }
 
-pub fn tuple_index(tuple: Expression, index: Int) -> Expression {
+pub fn tuple_index(tuple: Expression(a), index: Int) -> Expression(Variable) {
   use tuple <- compile(tuple)
   use unwrapped <- then(unwrap_type(tuple.type_))
   use type_ <- try(
@@ -694,7 +746,7 @@ type Parameter {
   Parameter(name: String, label: Option(String), type_: Type)
 }
 
-pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression {
+pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression(Variable) {
   use return_type <- then(type_variable)
 
   use function <- try(function.compile(_, "", return_type, []))
@@ -741,7 +793,7 @@ pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression {
 }
 
 pub fn recursive(
-  continue: fn(Expression) -> Statement,
+  continue: fn(Expression(Constant)) -> Statement,
 ) -> FunctionBuilder(Labelled) {
   use state, name, return_type, parameter_types <- FunctionBuilder
 
@@ -757,7 +809,7 @@ pub fn recursive(
 pub fn parameter(
   name: String,
   type_: Type,
-  continue: fn(Expression) -> FunctionBuilder(a),
+  continue: fn(Expression(_)) -> FunctionBuilder(a),
 ) -> FunctionBuilder(a) {
   use state, function_name, function_type, parameters <- FunctionBuilder
 
@@ -785,7 +837,7 @@ pub fn labelled_parameter(
   label: String,
   name: String,
   type_: Type,
-  continue: fn(Expression) -> FunctionBuilder(a),
+  continue: fn(Expression(_)) -> FunctionBuilder(a),
 ) -> FunctionBuilder(Labelled) {
   use state, function_name, function_type, parameters <- FunctionBuilder
 
@@ -827,7 +879,10 @@ pub fn function_body(body: Statement) -> FunctionBuilder(Unlabelled) {
   })
 }
 
-pub fn call(function: Expression, arguments: List(Expression)) -> Expression {
+pub fn call(
+  function: Expression(a),
+  arguments: List(Expression(a)),
+) -> Expression(Variable) {
   use function <- compile(function)
   use arguments <- compile_expressions(arguments)
 
@@ -871,7 +926,7 @@ fn call_doc(
   arguments: List(Compiled),
   function: Compiled,
   return_type: Type,
-) -> Expression {
+) -> Expression(a) {
   [
     doc.break("(", "("),
     arguments
@@ -889,10 +944,10 @@ fn call_doc(
 }
 
 pub fn function_capture(
-  function: Expression,
-  before_hole: List(Expression),
-  after_hole: List(Expression),
-) -> Expression {
+  function: Expression(a),
+  before_hole: List(Expression(a)),
+  after_hole: List(Expression(a)),
+) -> Expression(Variable) {
   use function <- compile(function)
   use before <- compile_expressions(before_hole)
   use after <- compile_expressions(after_hole)
@@ -946,7 +1001,7 @@ fn capture_doc(
   after: List(Compiled),
   parameter_type: Type,
   return_type: Type,
-) -> Expression {
+) -> Expression(a) {
   let type_ = Function(parameters: [parameter_type], return: return_type)
 
   [
@@ -969,14 +1024,14 @@ fn capture_doc(
   |> return
 }
 
-fn definition(continue: fn() -> Expression) -> Definition {
+fn definition(continue: fn() -> Expression(a)) -> Definition {
   Definition(continue().compile)
 }
 
 pub fn function(
   name: String,
   function: FunctionBuilder(a),
-  continue: fn(Expression) -> Definition,
+  continue: fn(Expression(Constant)) -> Definition,
 ) -> Definition {
   use <- definition
 
@@ -1053,6 +1108,32 @@ pub fn function(
 pub fn empty() -> Definition {
   use <- definition
   return(Compiled(doc.empty, type_nil))
+}
+
+pub fn constant(
+  name: String,
+  value: Expression(Constant),
+  continue: fn(Expression(Constant)) -> Definition,
+) -> Definition {
+  use <- definition
+
+  use value <- compile(value)
+
+  let constant_name = return(Compiled(doc.from_string(name), value.type_))
+
+  use rest <- compile_definition(continue(constant_name))
+
+  [
+    doc.from_string("const "),
+    doc.from_string(name),
+    doc.from_string(" = "),
+    value.document,
+    doc.lines(2),
+    rest.document,
+  ]
+  |> doc.concat
+  |> Compiled(value.type_)
+  |> return
 }
 // TODO:
 // BitString

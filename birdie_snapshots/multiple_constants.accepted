@@ -1,0 +1,13 @@
+---
+version: 1.4.1
+title: multiple_constants
+file: ./test/trick_test.gleam
+test_name: multiple_constants_test
+---
+const pi = 3.14
+
+const e = 2.71
+
+const mathematical_constants = #(e, pi)
+
+

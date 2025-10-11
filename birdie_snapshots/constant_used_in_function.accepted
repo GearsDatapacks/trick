@@ -1,0 +1,13 @@
+---
+version: 1.4.1
+title: constant_used_in_function
+file: ./test/trick_test.gleam
+test_name: constant_used_in_function_test
+---
+const pi = 3.14
+
+fn area(radius) {
+  pi *. radius *. radius
+}
+
+
