@@ -1,0 +1,15 @@
+---
+version: 1.4.1
+title: labelled_call
+file: ./test/trick_test.gleam
+test_name: labelled_call_test
+---
+fn wibble(left left: Int, right right: Int, condition condition: Bool) -> Bool {
+  left == right && condition
+}
+
+fn main() -> Bool {
+  wibble(True, right: 2, left: 1)
+}
+
+

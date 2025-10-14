@@ -6,6 +6,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
 import lazy_const
 import splitter
@@ -33,6 +34,9 @@ pub type Error {
   InvalidCall(type_: Type)
   IncorrectNumberOfArguments(expected: Int, got: Int)
   UnlabelledParameterAfterLabelledParameter
+  UnexpectedLabelledArgument(label: String)
+  UnknownLabel(label: String, available_labels: List(String))
+  DuplicateLabel(label: String)
 }
 
 type Compiled {
@@ -43,7 +47,11 @@ pub type Type {
   Custom(module: String, name: String, generics: List(Type))
   TypeVariable(id: Int)
   Tuple(elements: List(Type))
-  Function(parameters: List(Type), return: Type)
+  Function(parameters: List(Type), return: Type, field_map: Option(FieldMap))
+}
+
+pub type FieldMap {
+  FieldMap(arity: Int, fields: Dict(String, Int))
 }
 
 type State {
@@ -230,7 +238,9 @@ fn do_unify(
         }
       }
     }
-    Function(parameters: p1, return: r1), Function(parameters: p2, return: r2) ->
+    Function(parameters: p1, return: r1, field_map: _),
+      Function(parameters: p2, return: r2, field_map: _)
+    ->
       case list.strict_zip(p1, p2) {
         Error(_) -> Error(mismatch)
         Ok(parameters) -> {
@@ -249,7 +259,7 @@ fn do_unify(
               case do_unify(state, r1, r2) {
                 Error(error) -> Error(error)
                 Ok(#(state, return)) ->
-                  Ok(#(state, Function(list.reverse(parameters), return)))
+                  Ok(#(state, Function(list.reverse(parameters), return, None)))
               }
           }
         }
@@ -882,6 +892,7 @@ pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression(Variable) 
         parameter.type_
       }),
       return: return_type,
+      field_map: None,
     )
 
   [doc.from_string("fn"), parameter_list, doc.from_string(" "), body_doc]
@@ -895,7 +906,8 @@ pub fn recursive(
 ) -> FunctionBuilder(Labelled) {
   use state, name, return_type, parameter_types <- FunctionBuilder
 
-  let type_ = Function(parameters: parameter_types, return: return_type)
+  let type_ =
+    Function(parameters: parameter_types, return: return_type, field_map: None)
 
   let expression = return(Compiled(doc.from_string(name), type_))
 
@@ -989,13 +1001,14 @@ pub fn call(
   arguments: List(Expression(a)),
 ) -> Expression(Variable) {
   use function <- compile(function)
+
   use arguments <- compile_expressions(arguments)
 
   use called_type <- then(unwrap_type(function.type_))
 
   case called_type {
     Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
-    Function(parameters:, return: return_type) ->
+    Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(arguments, parameters) {
         Error(Nil) -> {
           let expected_length = list.length(parameters)
@@ -1019,7 +1032,11 @@ pub fn call(
       use return_type <- then(type_variable)
 
       let function_type =
-        Function(parameters: parameter_types, return: return_type)
+        Function(
+          parameters: parameter_types,
+          return: return_type,
+          field_map: None,
+        )
       use _ <- try(unify(called_type, function_type))
 
       call_doc(arguments, function, return_type)
@@ -1069,7 +1086,7 @@ pub fn function_capture(
 
   case called_type {
     Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
-    Function(parameters:, return: return_type) ->
+    Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(argument_types, parameters) {
         Error(Nil) -> {
           let expected_length = list.length(parameters)
@@ -1092,7 +1109,11 @@ pub fn function_capture(
       use return_type <- then(type_variable)
 
       let function_type =
-        Function(parameters: argument_types, return: return_type)
+        Function(
+          parameters: argument_types,
+          return: return_type,
+          field_map: None,
+        )
       use _ <- try(unify(called_type, function_type))
 
       capture_doc(function, before, after, parameter_type, return_type)
@@ -1107,7 +1128,8 @@ fn capture_doc(
   parameter_type: Type,
   return_type: Type,
 ) -> Expression(a) {
-  let type_ = Function(parameters: [parameter_type], return: return_type)
+  let type_ =
+    Function(parameters: [parameter_type], return: return_type, field_map: None)
 
   [
     doc.break("(", "("),
@@ -1184,12 +1206,31 @@ pub fn function(
 
   use return_type <- try(unify(body.type_, return_type))
 
+  use #(fields, arity) <- try(
+    pure(
+      list.try_fold(function.parameters, #(dict.new(), 0), fn(pair, parameter) {
+        let #(map, index) = pair
+        case parameter.label {
+          None -> Ok(#(map, index + 1))
+          Some(label) ->
+            case dict.get(map, label) {
+              Error(_) -> Ok(#(dict.insert(map, label, index), index + 1))
+              Ok(_) -> Error(DuplicateLabel(label:))
+            }
+        }
+      }),
+    ),
+  )
+
+  let field_map = FieldMap(arity:, fields:)
+
   let type_ =
     Function(
       parameters: list.map(function.parameters, fn(parameter) {
         parameter.type_
       }),
       return: return_type,
+      field_map: Some(field_map),
     )
 
   let function_name = return(Compiled(doc.from_string(name), type_))
@@ -1256,7 +1297,7 @@ fn print_type(type_: Type) -> String {
           <> string.join(list.map(generics, print_type), ", ")
           <> ")"
       }
-    Function(parameters:, return:) ->
+    Function(parameters:, return:, field_map: _) ->
       "fn("
       <> string.join(list.map(parameters, print_type), ", ")
       <> ") -> "
@@ -1311,4 +1352,214 @@ fn letter(id: Int) -> String {
     24 -> "y"
     _ -> "z"
   }
+}
+
+pub opaque type Argument {
+  Argument(label: Option(String), value: Expression(Variable))
+}
+
+pub fn argument(label: Option(String), value: Expression(Variable)) -> Argument {
+  Argument(label, value)
+}
+
+type CompiledArgument {
+  CompiledArgument(label: Option(String), value: Compiled)
+}
+
+pub fn labelled_call(
+  function: Expression(a),
+  arguments: List(Argument),
+) -> Expression(Variable) {
+  use function <- compile(function)
+  use arguments <- fold_list(
+    arguments,
+    fn(state) { #(state, []) },
+    fn(arguments, argument) {
+      fn(state) {
+        use #(state, value) <- result.map(argument.value.compile(state))
+        #(state, [CompiledArgument(label: argument.label, value:), ..arguments])
+      }
+    },
+  )
+  let arguments = list.reverse(arguments)
+
+  use called_type <- then(unwrap_type(function.type_))
+
+  let field_map = case called_type {
+    Custom(..) | Tuple(..) | TypeVariable(..) -> None
+    Function(field_map:, ..) -> field_map
+  }
+
+  use argument_types <- try(case field_map {
+    None -> assert_no_labelled_arguments(arguments)
+    Some(field_map) -> pure(reorder(arguments, field_map))
+  })
+
+  use called_type <- then(unwrap_type(function.type_))
+
+  case called_type {
+    Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
+    Function(parameters:, return: return_type, field_map: _) ->
+      case list.strict_zip(argument_types, parameters) {
+        Error(Nil) -> {
+          let expected_length = list.length(parameters)
+          let argument_length = list.length(argument_types)
+          error(IncorrectNumberOfArguments(
+            expected: expected_length,
+            got: argument_length,
+          ))
+        }
+        Ok(zipped) -> {
+          use <- try_each(zipped, fn(pair) {
+            let #(arg, param) = pair
+            unify(arg, with: param)
+          })
+
+          labelled_call_doc(arguments, function, return_type)
+        }
+      }
+    TypeVariable(_) -> {
+      use return_type <- then(type_variable)
+
+      let function_type =
+        Function(
+          parameters: argument_types,
+          return: return_type,
+          field_map: None,
+        )
+      use _ <- try(unify(called_type, function_type))
+
+      labelled_call_doc(arguments, function, return_type)
+    }
+  }
+}
+
+fn labelled_call_doc(
+  arguments: List(CompiledArgument),
+  function: Compiled,
+  return_type: Type,
+) -> Expression(a) {
+  [
+    doc.break("(", "("),
+    arguments
+      |> list.map(fn(arg) {
+        case arg.label {
+          None -> arg.value.document
+          Some(label) ->
+            doc.concat([
+              doc.from_string(label),
+              doc.from_string(": "),
+              arg.value.document,
+            ])
+        }
+      })
+      |> doc.join(doc.break(", ", ",")),
+  ]
+  |> doc.concat
+  |> doc.nest(indent)
+  |> doc.prepend(function.document)
+  |> doc.append(doc.break("", ","))
+  |> doc.append(doc.from_string(")"))
+  |> doc.group
+  |> Compiled(return_type)
+  |> return
+}
+
+fn reorder(
+  arguments: List(CompiledArgument),
+  field_map: FieldMap,
+) -> Result(List(Type), Error) {
+  // TODO: Handle incorrect arity and duplicate labels
+  let argument_count = list.length(arguments)
+  use <- bool.guard(
+    argument_count != field_map.arity,
+    Error(IncorrectNumberOfArguments(
+      expected: field_map.arity,
+      got: argument_count,
+    )),
+  )
+
+  use #(unlabelled_fields, labelled_fields) <- result.map(split_arguments(
+    arguments,
+    field_map,
+    dict.new(),
+    [],
+    set.new(),
+  ))
+
+  reorder_arguments(unlabelled_fields, labelled_fields, 0, [])
+}
+
+fn reorder_arguments(
+  unlabelled_fields: List(Type),
+  labelled_fields: Dict(Int, Type),
+  index: Int,
+  out: List(Type),
+) -> List(Type) {
+  case dict.get(labelled_fields, index), unlabelled_fields {
+    Error(_), [] -> list.reverse(out)
+    Ok(value), _ ->
+      reorder_arguments(unlabelled_fields, labelled_fields, index + 1, [
+        value,
+        ..out
+      ])
+    Error(_), [first, ..rest] ->
+      reorder_arguments(rest, labelled_fields, index + 1, [first, ..out])
+  }
+}
+
+fn split_arguments(
+  arguments: List(CompiledArgument),
+  field_map: FieldMap,
+  labelled: Dict(Int, Type),
+  unlabelled: List(Type),
+  seen_labels: Set(String),
+) -> Result(#(List(Type), Dict(Int, Type)), Error) {
+  case arguments {
+    [] -> Ok(#(list.reverse(unlabelled), labelled))
+    [first, ..rest] ->
+      case first.label {
+        None ->
+          split_arguments(
+            rest,
+            field_map,
+            labelled,
+            [first.value.type_, ..unlabelled],
+            seen_labels,
+          )
+        Some(label) ->
+          case set.contains(seen_labels, label) {
+            True -> Error(DuplicateLabel(label:))
+            False ->
+              case dict.get(field_map.fields, label) {
+                Error(_) ->
+                  Error(UnknownLabel(
+                    label:,
+                    available_labels: dict.keys(field_map.fields),
+                  ))
+                Ok(index) ->
+                  split_arguments(
+                    rest,
+                    field_map,
+                    dict.insert(labelled, index, first.value.type_),
+                    unlabelled,
+                    set.insert(seen_labels, label),
+                  )
+              }
+          }
+      }
+  }
+}
+
+fn assert_no_labelled_arguments(
+  arguments: List(CompiledArgument),
+) -> fn(State) -> Result(#(State, List(Type)), Error) {
+  arguments
+  |> list.try_map(fn(argument) {
+    case argument.label {
+      None -> Ok(argument.value.type_)
+      Some(label) -> Error(UnexpectedLabelledArgument(label:))
+    }
+  })
+  |> pure
 }

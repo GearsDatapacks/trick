@@ -915,7 +915,7 @@ pub fn type_annotation_printing_test() {
       )
       use function <- trick.parameter(
         "function",
-        trick.Function([type_int, type_int], type_float),
+        trick.Function([type_int, type_int], type_float, field_map: None),
       )
       use generic <- trick.parameter("generic", trick.TypeVariable(82))
       [tuple, function, generic]
@@ -979,4 +979,157 @@ pub fn tuple_types_are_unified_test() {
     }
     |> trick.block
     |> trick.expression_to_string
+}
+
+pub fn labelled_call_test() {
+  {
+    use wibble <- trick.function("wibble", {
+      use left <- trick.labelled_parameter("left", "left", type_int)
+      use right <- trick.labelled_parameter("right", "right", type_int)
+      use condition <- trick.labelled_parameter(
+        "condition",
+        "condition",
+        type_bool,
+      )
+      left
+      |> trick.equal(right)
+      |> trick.and(condition)
+      |> trick.expression
+      |> trick.function_body
+    })
+
+    use _main <- trick.function(
+      "main",
+      trick.function_body(
+        trick.expression(
+          trick.labelled_call(wibble, [
+            trick.argument(None, trick.bool(True)),
+            trick.argument(Some("right"), trick.int(2)),
+            trick.argument(Some("left"), trick.int(1)),
+          ]),
+        ),
+      ),
+    )
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("labelled_call")
+}
+
+pub fn labels_affect_ordering_test() {
+  let assert Error(error) =
+    trick.to_string({
+      use wibble <- trick.function("wibble", {
+        use first <- trick.labelled_parameter("first", "first", type_int)
+        use second <- trick.labelled_parameter("second", "second", type_float)
+        use third <- trick.labelled_parameter("third", "third", type_bool)
+        [first, second, third]
+        |> trick.tuple
+        |> trick.expression
+        |> trick.function_body
+      })
+
+      use _main <- trick.function(
+        "main",
+        trick.function_body(
+          trick.expression(
+            trick.labelled_call(wibble, [
+              trick.argument(Some("second"), trick.int(1)),
+              trick.argument(Some("third"), trick.float(1.0)),
+              trick.argument(Some("first"), trick.bool(True)),
+            ]),
+          ),
+        ),
+      )
+
+      trick.empty()
+    })
+
+  assert error == trick.TypeMismatch(expected: type_int, got: type_bool)
+}
+
+pub fn incorrect_arity_labelled_call_test() {
+  let assert Error(error) =
+    trick.to_string({
+      use wibble <- trick.function("wibble", {
+        use first <- trick.labelled_parameter("first", "first", type_int)
+        use second <- trick.labelled_parameter("second", "second", type_float)
+        use third <- trick.labelled_parameter("third", "third", type_bool)
+        [first, second, third]
+        |> trick.tuple
+        |> trick.expression
+        |> trick.function_body
+      })
+
+      use _main <- trick.function(
+        "main",
+        trick.function_body(
+          trick.expression(
+            trick.labelled_call(wibble, [
+              trick.argument(Some("second"), trick.float(1.0)),
+              trick.argument(Some("third"), trick.bool(True)),
+            ]),
+          ),
+        ),
+      )
+
+      trick.empty()
+    })
+
+  assert error == trick.IncorrectNumberOfArguments(expected: 3, got: 2)
+}
+
+pub fn duplicate_label_in_call_test() {
+  let assert Error(error) =
+    trick.to_string({
+      use wibble <- trick.function("wibble", {
+        use first <- trick.labelled_parameter("first", "first", type_int)
+        use second <- trick.labelled_parameter("second", "second", type_float)
+        use third <- trick.labelled_parameter("third", "third", type_bool)
+        [first, second, third]
+        |> trick.tuple
+        |> trick.expression
+        |> trick.function_body
+      })
+
+      use _main <- trick.function(
+        "main",
+        trick.function_body(
+          trick.expression(
+            trick.labelled_call(wibble, [
+              trick.argument(Some("second"), trick.int(1)),
+              trick.argument(Some("second"), trick.float(1.0)),
+              trick.argument(Some("third"), trick.bool(True)),
+            ]),
+          ),
+        ),
+      )
+
+      trick.empty()
+    })
+
+  assert error == trick.DuplicateLabel("second")
+}
+
+pub fn duplicate_label_in_definition_test() {
+  let assert Error(error) =
+    trick.to_string(
+      trick.function(
+        "wibble",
+        {
+          use first <- trick.labelled_parameter("first", "first", type_int)
+          use second <- trick.labelled_parameter("first", "second", type_float)
+          use third <- trick.labelled_parameter("third", "third", type_bool)
+          [first, second, third]
+          |> trick.tuple
+          |> trick.expression
+          |> trick.function_body
+        },
+        fn(_) { trick.empty() },
+      ),
+    )
+
+  assert error == trick.DuplicateLabel("first")
 }

@@ -7,7 +7,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 - Bit arrays*
 - Case expressions
 - Field access
-- Labelled arguments when calling functions
 - Let assert
 - Let with patterns
 - Pipes*
