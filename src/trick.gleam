@@ -278,6 +278,33 @@ pub fn int(value: Int) -> Expression(a) {
   |> return
 }
 
+pub fn int_base2(value: Int) -> Expression(a) {
+  value
+  |> int.to_base2
+  |> doc.from_string
+  |> doc.prepend(doc.from_string("0b"))
+  |> Compiled(type_int)
+  |> return
+}
+
+pub fn int_base8(value: Int) -> Expression(a) {
+  value
+  |> int.to_base8
+  |> doc.from_string
+  |> doc.prepend(doc.from_string("0o"))
+  |> Compiled(type_int)
+  |> return
+}
+
+pub fn int_base16(value: Int) -> Expression(a) {
+  value
+  |> int.to_base16
+  |> doc.from_string
+  |> doc.prepend(doc.from_string("0x"))
+  |> Compiled(type_int)
+  |> return
+}
+
 pub fn float(value: Float) -> Expression(a) {
   value
   |> float.to_string

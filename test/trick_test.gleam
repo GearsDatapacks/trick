@@ -929,3 +929,14 @@ pub fn type_annotation_printing_test() {
   |> unwrap
   |> birdie.snap("type_annotation_printing")
 }
+
+pub fn int_different_bases_test() {
+  assert 4762 |> trick.int_base2 |> trick.expression_to_string |> unwrap
+    == "0b1001010011010"
+
+  assert 4762 |> trick.int_base8 |> trick.expression_to_string |> unwrap
+    == "0o11232"
+
+  assert 4762 |> trick.int_base16 |> trick.expression_to_string |> unwrap
+    == "0x129A"
+}
