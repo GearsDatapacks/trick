@@ -200,11 +200,81 @@ fn do_unify(
 ) -> Result(#(State, Type), Error) {
   use <- bool.guard(a == b, Ok(#(state, a)))
 
+  let mismatch = TypeMismatch(expected: b, got: a)
+
   case a, b {
     TypeVariable(id:), other ->
       unify_type_variable(state, id, other, VariableFirst)
     other, TypeVariable(id:) -> unify_type_variable(state, id, other, TypeFirst)
-    _, _ -> Error(TypeMismatch(expected: b, got: a))
+    Custom(module: m1, name: n1, generics: g1),
+      Custom(module: m2, name: n2, generics: g2)
+      if m1 == m2 && n1 == n2
+    -> {
+      case list.strict_zip(g1, g2) {
+        Error(_) -> Error(mismatch)
+        Ok(generics) -> {
+          let generics =
+            list.try_fold(generics, #(state, []), fn(acc, pair) {
+              let #(state, generics) = acc
+              let #(a, b) = pair
+              case do_unify(state, a, b) {
+                Ok(#(state, type_)) -> Ok(#(state, [type_, ..generics]))
+                Error(error) -> Error(error)
+              }
+            })
+          case generics {
+            Error(error) -> Error(error)
+            Ok(#(state, generics)) ->
+              Ok(#(state, Custom(m1, n1, list.reverse(generics))))
+          }
+        }
+      }
+    }
+    Function(parameters: p1, return: r1), Function(parameters: p2, return: r2) ->
+      case list.strict_zip(p1, p2) {
+        Error(_) -> Error(mismatch)
+        Ok(parameters) -> {
+          let parameters =
+            list.try_fold(parameters, #(state, []), fn(acc, pair) {
+              let #(state, parameters) = acc
+              let #(a, b) = pair
+              case do_unify(state, a, b) {
+                Ok(#(state, type_)) -> Ok(#(state, [type_, ..parameters]))
+                Error(error) -> Error(error)
+              }
+            })
+          case parameters {
+            Error(error) -> Error(error)
+            Ok(#(state, parameters)) ->
+              case do_unify(state, r1, r2) {
+                Error(error) -> Error(error)
+                Ok(#(state, return)) ->
+                  Ok(#(state, Function(list.reverse(parameters), return)))
+              }
+          }
+        }
+      }
+    Tuple(elements: e1), Tuple(elements: e2) ->
+      case list.strict_zip(e1, e2) {
+        Error(_) -> Error(mismatch)
+        Ok(elements) -> {
+          let elements =
+            list.try_fold(elements, #(state, []), fn(acc, pair) {
+              let #(state, elements) = acc
+              let #(a, b) = pair
+              case do_unify(state, a, b) {
+                Ok(#(state, type_)) -> Ok(#(state, [type_, ..elements]))
+                Error(error) -> Error(error)
+              }
+            })
+          case elements {
+            Error(error) -> Error(error)
+            Ok(#(state, elements)) ->
+              Ok(#(state, Tuple(list.reverse(elements))))
+          }
+        }
+      }
+    _, _ -> Error(mismatch)
   }
 }
 

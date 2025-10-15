@@ -940,3 +940,43 @@ pub fn int_different_bases_test() {
   assert 4762 |> trick.int_base16 |> trick.expression_to_string |> unwrap
     == "0x129A"
 }
+
+pub fn custom_types_are_unified_test() {
+  let assert Ok(_) =
+    {
+      use empty <- trick.variable("empty", trick.list([]))
+      use wibble <- trick.variable(
+        "wibble",
+        trick.anonymous({
+          use list <- trick.parameter("list", type_list(type_int))
+          trick.function_body(trick.expression(list))
+        }),
+      )
+      trick.expression(trick.call(wibble, [empty]))
+    }
+    |> trick.block
+    |> trick.expression_to_string
+}
+
+pub fn tuple_types_are_unified_test() {
+  let assert Ok(_) =
+    {
+      use generic_tuple <- trick.variable(
+        "generic_tuple",
+        trick.tuple([trick.todo_(None), trick.int(1), trick.panic_(None)]),
+      )
+      use wibble <- trick.variable(
+        "wibble",
+        trick.anonymous({
+          use tuple <- trick.parameter(
+            "tuple",
+            trick.Tuple([type_float, type_int, type_string]),
+          )
+          trick.function_body(trick.expression(tuple))
+        }),
+      )
+      trick.expression(trick.call(wibble, [generic_tuple]))
+    }
+    |> trick.block
+    |> trick.expression_to_string
+}
