@@ -25,3 +25,5 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 - An API for creating types
 - Comments and doc comments
 - Operator grouping based on precedence
+- Check whether variable names are valid
+- A way to make public/private functions
