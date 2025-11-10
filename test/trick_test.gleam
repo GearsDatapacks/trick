@@ -1133,3 +1133,32 @@ pub fn duplicate_label_in_definition_test() {
 
   assert error == trick.DuplicateLabel("first")
 }
+
+pub fn comment_test() {
+  {
+    use x <- trick.variable("x", trick.int(1))
+    use <- trick.comment(
+      "Here, we add one
+to the value of `x`.",
+    )
+    x |> trick.add(trick.int(1)) |> trick.expression
+  }
+  |> trick.block
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("comment")
+}
+
+pub fn doc_comment_test() {
+  {
+    use <- trick.doc_comment(
+      "The ratio of a circle's radius
+to its circumference",
+    )
+    use _pi <- trick.constant("pi", trick.float(3.14))
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("doc_comment")
+}

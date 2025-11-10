@@ -748,6 +748,24 @@ pub fn discard(discarded: Statement, continue: fn() -> Statement) -> Statement {
   |> return
 }
 
+pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
+  use <- statement
+  let rest = continue()
+  use rest <- compile_statement(rest)
+
+  let comment =
+    comment
+    |> string.split("\n")
+    |> list.map(fn(line) { doc.from_string("// " <> line) })
+    |> doc.join(doc.line)
+
+  [comment, doc.line, rest.document]
+  |> doc.concat
+  |> doc.force_break
+  |> Compiled(rest.type_)
+  |> return
+}
+
 pub fn block(inner: Statement) -> Expression(Variable) {
   use inner <- compile_statement(inner)
 
@@ -1283,6 +1301,27 @@ pub fn constant(
   ]
   |> doc.concat
   |> Compiled(value.type_)
+  |> return
+}
+
+pub fn doc_comment(comment: String, continue: fn() -> Definition) -> Definition {
+  use <- definition
+
+  use rest <- compile_definition(continue())
+
+  let comment =
+    comment
+    |> string.split("\n")
+    |> list.map(fn(line) { doc.from_string("/// " <> line) })
+    |> doc.join(doc.line)
+
+  [
+    comment,
+    doc.line,
+    rest.document,
+  ]
+  |> doc.concat
+  |> Compiled(TypeVariable(0))
   |> return
 }
 

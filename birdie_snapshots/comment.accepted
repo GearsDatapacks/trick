@@ -1,0 +1,12 @@
+---
+version: 1.4.1
+title: comment
+file: ./test/trick_test.gleam
+test_name: comment_test
+---
+{
+  let x = 1
+  // Here, we add one
+  // to the value of `x`.
+  x + 1
+}
