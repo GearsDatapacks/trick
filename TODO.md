@@ -15,7 +15,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 
 ### Statements
 
-- Custom types
 - Type aliases*
 - Imports
 

@@ -1,0 +1,12 @@
+---
+version: 1.4.1
+title: custom_type
+file: ./test/trick_test.gleam
+test_name: custom_type_test
+---
+type SomeType {
+  ConstructorName
+  OtherConstructor(Int, wibble: Float)
+}
+
+

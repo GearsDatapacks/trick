@@ -1162,3 +1162,90 @@ to its circumference",
   |> unwrap
   |> birdie.snap("doc_comment")
 }
+
+pub fn custom_type_test() {
+  {
+    use _type <- trick.custom_type("SomeType")
+    use _constructor_name <- trick.constructor("ConstructorName", [])
+    use _other_constructor <- trick.constructor("OtherConstructor", [
+      trick.Field(None, type_int),
+      trick.Field(Some("wibble"), type_float),
+    ])
+    use <- trick.end_custom_type
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("custom_type")
+}
+
+pub fn custom_type_used_in_function_test() {
+  {
+    use type_ <- trick.custom_type("SomeType")
+    use _constructor_name <- trick.constructor("ConstructorName", [])
+    use other_constructor <- trick.constructor("OtherConstructor", [
+      trick.Field(None, type_int),
+      trick.Field(Some("wibble"), type_float),
+    ])
+    use <- trick.end_custom_type
+
+    use _main <- trick.function("main", {
+      use value <- trick.parameter("value", type_)
+      trick.function_body({
+        use value2 <- trick.variable(
+          "value2",
+          trick.call(other_constructor, [trick.int(10), trick.float(3.14)]),
+        )
+        trick.expression(trick.tuple([value, value2]))
+      })
+    })
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("custom_type_used_in_function")
+}
+
+pub fn custom_type_with_labels_test() {
+  {
+    use type_ <- trick.custom_type("SomeType")
+    use _constructor_name <- trick.constructor("ConstructorName", [])
+    use other_constructor <- trick.constructor("OtherConstructor", [
+      trick.Field(None, type_int),
+      trick.Field(Some("wibble"), type_float),
+    ])
+    use <- trick.end_custom_type
+
+    use _main <- trick.function("main", {
+      use value <- trick.parameter("value", type_)
+      trick.function_body({
+        use value2 <- trick.variable(
+          "value2",
+          trick.labelled_call(other_constructor, [
+            trick.argument(None, trick.int(10)),
+            trick.argument(Some("wibble"), trick.float(3.14)),
+          ]),
+        )
+        trick.expression(trick.tuple([value, value2]))
+      })
+    })
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("custom_type_with_labels")
+}
+
+pub fn external_custom_type_test() {
+  {
+    use _type <- trick.custom_type("External")
+    use <- trick.end_custom_type
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("external_custom_type")
+}

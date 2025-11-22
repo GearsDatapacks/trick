@@ -1,0 +1,17 @@
+---
+version: 1.4.1
+title: custom_type_used_in_function
+file: ./test/trick_test.gleam
+test_name: custom_type_used_in_function_test
+---
+type SomeType {
+  ConstructorName
+  OtherConstructor(Int, wibble: Float)
+}
+
+fn main(value: SomeType) -> #(SomeType, SomeType) {
+  let value2 = OtherConstructor(10, 3.14)
+  #(value, value2)
+}
+
+

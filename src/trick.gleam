@@ -55,7 +55,11 @@ pub type FieldMap {
 }
 
 type State {
-  State(resolved_variables: Dict(Int, Type), type_variable_id: Int)
+  State(
+    resolved_variables: Dict(Int, Type),
+    type_variable_id: Int,
+    module: String,
+  )
 }
 
 const type_int = Custom("gleam", "Int", [])
@@ -347,7 +351,7 @@ pub fn to_string(definition: Definition) -> Result(String, Error) {
 }
 
 fn new_state() -> State {
-  State(dict.new(), 0)
+  State(dict.new(), 0, "module")
 }
 
 pub fn int(value: Int) -> Expression(a) {
@@ -1601,4 +1605,152 @@ fn assert_no_labelled_arguments(
     }
   })
   |> pure
+}
+
+pub opaque type CustomType {
+  CustomType(
+    compile: fn(State, Type) -> Result(#(State, CustomTypeInfo), Error),
+  )
+}
+
+type CustomTypeInfo {
+  CustomTypeInfo(constructors: List(Constructor), rest: Definition)
+}
+
+type Constructor {
+  Constructor(name: String, fields: List(Field))
+}
+
+pub type Field {
+  Field(label: Option(String), type_: Type)
+}
+
+pub fn custom_type(name: String, continue: fn(Type) -> CustomType) -> Definition {
+  use <- definition
+
+  use module <- then(fn(state) { #(state, state.module) })
+
+  let type_ = Custom(module:, name:, generics: [])
+
+  let custom_type = continue(type_)
+  use custom_type <- try(custom_type.compile(_, type_))
+  use rest <- compile_definition(custom_type.rest)
+
+  use <- bool.lazy_guard(custom_type.constructors == [], fn() {
+    [
+      doc.from_string("type "),
+      doc.from_string(name),
+      doc.lines(2),
+      rest.document,
+    ]
+    |> doc.concat
+    |> Compiled(type_)
+    |> return
+  })
+
+  let constructors =
+    list.map(custom_type.constructors, fn(constructor) {
+      case constructor.fields {
+        [] -> doc.from_string(constructor.name)
+        _ ->
+          [
+            doc.from_string(constructor.name),
+            [
+              doc.break("(", "("),
+              doc.join(
+                list.map(constructor.fields, fn(field) {
+                  case field.label {
+                    None -> doc.from_string(print_type(field.type_))
+                    Some(label) ->
+                      [
+                        doc.from_string(label),
+                        doc.from_string(": "),
+                        doc.from_string(print_type(field.type_)),
+                      ]
+                      |> doc.concat
+                  }
+                }),
+                doc.break(", ", ","),
+              ),
+            ]
+              |> doc.concat
+              |> doc.nest(indent),
+            doc.break("", ","),
+            doc.from_string(")"),
+          ]
+          |> doc.concat
+      }
+    })
+    |> doc.join(doc.line)
+    |> doc.prepend(doc.line)
+    |> doc.group
+    |> doc.nest(indent)
+
+  [
+    doc.from_string("type "),
+    doc.from_string(name),
+    doc.from_string(" {"),
+    constructors,
+    doc.line,
+    doc.from_string("}"),
+    doc.lines(2),
+    rest.document,
+  ]
+  |> doc.concat
+  |> Compiled(type_)
+  |> return
+}
+
+pub fn constructor(
+  name: String,
+  fields: List(Field),
+  continue: fn(Expression(Constant)) -> CustomType,
+) -> CustomType {
+  use state, type_ <- CustomType
+
+  use #(field_map_fields, arity) <- result.try(
+    list.try_fold(fields, #(dict.new(), 0), fn(pair, parameter) {
+      let #(map, index) = pair
+      case parameter.label {
+        None -> Ok(#(map, index + 1))
+        Some(label) ->
+          case dict.get(map, label) {
+            Error(_) -> Ok(#(dict.insert(map, label, index), index + 1))
+            Ok(_) -> Error(DuplicateLabel(label:))
+          }
+      }
+    }),
+  )
+
+  let field_map = FieldMap(arity:, fields: field_map_fields)
+  let constructor_type = case fields {
+    [] -> type_
+    _ ->
+      Function(
+        parameters: list.map(fields, fn(field) { field.type_ }),
+        return: type_,
+        field_map: Some(field_map),
+      )
+  }
+
+  let expression = Compiled(doc.from_string(name), constructor_type)
+
+  let custom_type = continue(return(expression))
+  use #(state, info) <- result.try(custom_type.compile(state, type_))
+
+  Ok(#(
+    state,
+    CustomTypeInfo(..info, constructors: [
+      Constructor(name:, fields:),
+      ..info.constructors
+    ]),
+  ))
+}
+
+pub fn end_custom_type(continue: fn() -> Definition) -> CustomType {
+  use state, _type <- CustomType
+
+  let rest = continue()
+
+  Ok(#(state, CustomTypeInfo(constructors: [], rest:)))
 }
