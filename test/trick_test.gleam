@@ -917,7 +917,7 @@ pub fn type_annotation_printing_test() {
         "function",
         trick.Function([type_int, type_int], type_float, field_map: None),
       )
-      use generic <- trick.parameter("generic", trick.TypeVariable(82))
+      use generic <- trick.parameter("generic", trick.Generic(82))
       [tuple, function, generic]
       |> trick.tuple
       |> trick.expression
@@ -1165,7 +1165,8 @@ to its circumference",
 
 pub fn custom_type_test() {
   {
-    use _type <- trick.custom_type("SomeType")
+    use <- trick.custom_type("SomeType")
+    use _type <- trick.custom_type_constructors
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use _other_constructor <- trick.constructor("OtherConstructor", [
       trick.Field(None, type_int),
@@ -1182,7 +1183,8 @@ pub fn custom_type_test() {
 
 pub fn custom_type_used_in_function_test() {
   {
-    use type_ <- trick.custom_type("SomeType")
+    use <- trick.custom_type("SomeType")
+    use type_ <- trick.custom_type_constructors
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use other_constructor <- trick.constructor("OtherConstructor", [
       trick.Field(None, type_int),
@@ -1210,7 +1212,8 @@ pub fn custom_type_used_in_function_test() {
 
 pub fn custom_type_with_labels_test() {
   {
-    use type_ <- trick.custom_type("SomeType")
+    use <- trick.custom_type("SomeType")
+    use type_ <- trick.custom_type_constructors
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use other_constructor <- trick.constructor("OtherConstructor", [
       trick.Field(None, type_int),
@@ -1241,11 +1244,92 @@ pub fn custom_type_with_labels_test() {
 
 pub fn external_custom_type_test() {
   {
-    use _type <- trick.custom_type("External")
+    use <- trick.custom_type("External")
+    use _type <- trick.custom_type_constructors
     use <- trick.end_custom_type
     trick.empty()
   }
   |> trick.to_string
   |> unwrap
   |> birdie.snap("external_custom_type")
+}
+
+pub fn external_type_with_parameters_test() {
+  {
+    use <- trick.custom_type("External")
+    use _param <- trick.type_parameter("something")
+    use _param <- trick.type_parameter("other_thing")
+    use _type <- trick.custom_type_constructors
+    use <- trick.end_custom_type
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("external_type_with_parameters")
+}
+
+pub fn custom_type_with_parameters_test() {
+  {
+    use <- trick.custom_type("Option")
+    use value <- trick.type_parameter("value")
+    use _type <- trick.custom_type_constructors
+    use _some <- trick.constructor("Some", [
+      trick.Field(label: None, type_: value),
+    ])
+    use _none <- trick.constructor("None", [])
+    use <- trick.end_custom_type
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("custom_type_with_parameters")
+}
+
+pub fn construct_generic_custom_type_test() {
+  {
+    use <- trick.custom_type("Option")
+    use value <- trick.type_parameter("value")
+    use _type <- trick.custom_type_constructors
+    use some <- trick.constructor("Some", [
+      trick.Field(label: None, type_: value),
+    ])
+    use _none <- trick.constructor("None", [])
+    use <- trick.end_custom_type
+    use _main <- trick.function(
+      "main",
+      trick.function_body({
+        use <- trick.discard(trick.expression(trick.call(some, [trick.int(1)])))
+        trick.expression(trick.call(some, [trick.string("Hello")]))
+      }),
+    )
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("construct_generic_custom_type")
+}
+
+pub fn generic_cannot_be_two_types_at_once() {
+  let assert Error(error) =
+    {
+      use <- trick.custom_type("Double")
+      use value <- trick.type_parameter("value")
+      use _ <- trick.custom_type_constructors
+      use double <- trick.constructor("Double", [
+        trick.Field(None, value),
+        trick.Field(None, value),
+      ])
+      use <- trick.end_custom_type
+      use _ <- trick.function(
+        "main",
+        trick.function_body(
+          trick.expression(
+            trick.call(double, [trick.int(1), trick.string("2")]),
+          ),
+        ),
+      )
+      trick.empty()
+    }
+    |> trick.to_string
+  assert error == trick.TypeMismatch(expected: type_int, got: type_string)
 }

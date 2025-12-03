@@ -1,0 +1,9 @@
+---
+version: 1.5.4
+title: external_type_with_parameters
+file: ./test/trick_test.gleam
+test_name: external_type_with_parameters_test
+---
+type External(something, other_thing)
+
+

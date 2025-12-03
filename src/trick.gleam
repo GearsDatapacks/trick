@@ -45,7 +45,8 @@ type Compiled {
 
 pub type Type {
   Custom(module: String, name: String, generics: List(Type))
-  TypeVariable(id: Int)
+  Generic(id: Int)
+  Unbound(id: Int)
   Tuple(elements: List(Type))
   Function(parameters: List(Type), return: Type, field_map: Option(FieldMap))
 }
@@ -57,6 +58,7 @@ pub type FieldMap {
 type State {
   State(
     resolved_variables: Dict(Int, Type),
+    type_variable_names: Dict(Int, String),
     type_variable_id: Int,
     module: String,
   )
@@ -76,10 +78,41 @@ fn type_list(element: Type) -> Type {
   Custom("gleam", "List", [element])
 }
 
-fn type_variable(state: State) -> #(State, Type) {
+fn next_unbound(state: State) -> #(State, Type) {
   let id = state.type_variable_id
-  let type_ = TypeVariable(id:)
+  let type_ = Unbound(id:)
   let state = State(..state, type_variable_id: id + 1)
+  #(state, type_)
+}
+
+fn next_generic(state: State) -> #(State, Type) {
+  let id = state.type_variable_id
+  let type_ = Generic(id:)
+  let state = State(..state, type_variable_id: id + 1)
+  #(state, type_)
+}
+
+fn named_unbound(state: State, name: String) -> #(State, Type) {
+  let id = state.type_variable_id
+  let type_ = Unbound(id:)
+  let state =
+    State(
+      ..state,
+      type_variable_names: dict.insert(state.type_variable_names, id, name),
+      type_variable_id: id + 1,
+    )
+  #(state, type_)
+}
+
+fn named_generic(state: State, name: String) -> #(State, Type) {
+  let id = state.type_variable_id
+  let type_ = Generic(id:)
+  let state =
+    State(
+      ..state,
+      type_variable_names: dict.insert(state.type_variable_names, id, name),
+      type_variable_id: id + 1,
+    )
   #(state, type_)
 }
 
@@ -132,9 +165,8 @@ fn unify(state: State, a: Type, with b: Type) -> Result(#(State, Type), Error) {
   let mismatch = TypeMismatch(expected: b, got: a)
 
   case a, b {
-    TypeVariable(id:), other ->
-      unify_type_variable(state, id, other, VariableFirst)
-    other, TypeVariable(id:) -> unify_type_variable(state, id, other, TypeFirst)
+    Unbound(id:), other -> unify_unbound_type(state, id, other, VariableFirst)
+    other, Unbound(id:) -> unify_unbound_type(state, id, other, TypeFirst)
     Custom(module: m1, name: n1, generics: g1),
       Custom(module: m2, name: n2, generics: g2)
       if m1 == m2 && n1 == n2
@@ -214,7 +246,7 @@ type Order {
   TypeFirst
 }
 
-fn unify_type_variable(
+fn unify_unbound_type(
   state: State,
   id: Int,
   type_: Type,
@@ -235,16 +267,84 @@ fn unify_type_variable(
   }
 }
 
-fn unwrap_type(state: State, type_: Type) -> #(State, Type) {
+fn unwrap_type(state: State, type_: Type) -> Type {
   let unwrapped = case type_ {
-    Custom(..) | Tuple(..) | Function(..) -> type_
-    TypeVariable(id:) ->
+    Custom(..) | Tuple(..) | Function(..) | Generic(..) -> type_
+    Unbound(id:) ->
       case dict.get(state.resolved_variables, id) {
         Error(_) -> type_
         Ok(type_) -> type_
       }
   }
-  #(state, unwrapped)
+  unwrapped
+}
+
+fn instantiate(state: State, type_: Type) -> #(State, Type) {
+  let #(state, type_, _) = do_instantiate(state, type_, dict.new())
+  #(state, type_)
+}
+
+fn do_instantiate(
+  state: State,
+  type_: Type,
+  instantiated: Dict(Int, Type),
+) -> #(State, Type, Dict(Int, Type)) {
+  case type_ {
+    Custom(module:, name:, generics:) -> {
+      let #(#(state, instantiated), generics) =
+        list.map_fold(generics, #(state, instantiated), fn(acc, generic) {
+          let #(state, instantiated) = acc
+          let #(state, generic, instantiated) =
+            do_instantiate(state, generic, instantiated)
+          #(#(state, instantiated), generic)
+        })
+      #(state, Custom(module:, name:, generics:), instantiated)
+    }
+    Generic(id) ->
+      case dict.get(instantiated, id) {
+        Ok(type_) -> #(state, type_, instantiated)
+        Error(_) ->
+          case dict.get(state.type_variable_names, id) {
+            Ok(name) -> {
+              let #(state, type_) = named_unbound(state, name)
+              #(state, type_, dict.insert(instantiated, id, type_))
+            }
+            Error(_) -> {
+              let #(state, type_) = next_unbound(state)
+              #(state, type_, dict.insert(instantiated, id, type_))
+            }
+          }
+      }
+    Unbound(..) -> #(state, type_, instantiated)
+    Tuple(elements:) -> {
+      let #(#(state, instantiated), elements) =
+        list.map_fold(elements, #(state, instantiated), fn(acc, element) {
+          let #(state, instantiated) = acc
+          let #(state, element, instantiated) =
+            do_instantiate(state, element, instantiated)
+          #(#(state, instantiated), element)
+        })
+      #(state, Tuple(elements:), instantiated)
+    }
+    Function(parameters:, return:, field_map:) -> {
+      let #(#(state, instantiated), parameters) =
+        list.map_fold(parameters, #(state, instantiated), fn(acc, parameter) {
+          let #(state, instantiated) = acc
+          let #(state, parameter, instantiated) =
+            do_instantiate(state, parameter, instantiated)
+          #(#(state, instantiated), parameter)
+        })
+      let #(state, return, instantiated) =
+        do_instantiate(state, return, instantiated)
+      #(state, Function(parameters:, return:, field_map:), instantiated)
+    }
+  }
+}
+
+fn instantiated(doc: Document, type_: Type) -> Expression(_) {
+  use state <- Expression
+  let #(state, type_) = instantiate(state, type_)
+  Ok(#(state, Compiled(doc, type_)))
 }
 
 const width: Int = 80
@@ -268,7 +368,12 @@ pub fn to_string(definition: Definition) -> Result(String, Error) {
 }
 
 fn new_state() -> State {
-  State(dict.new(), 0, "module")
+  State(
+    resolved_variables: dict.new(),
+    type_variable_names: dict.new(),
+    type_variable_id: 0,
+    module: "module",
+  )
 }
 
 pub fn int(value: Int) -> Expression(a) {
@@ -460,7 +565,7 @@ pub fn equal(
   right: Expression(_),
 ) -> Expression(Variable) {
   use state <- Expression
-  let #(state, type_) = type_variable(state)
+  let #(state, type_) = next_unbound(state)
   binary_operator(left, "==", right, type_, type_bool).compile(state)
 }
 
@@ -469,7 +574,7 @@ pub fn not_equal(
   right: Expression(_),
 ) -> Expression(Variable) {
   use state <- Expression
-  let #(state, type_) = type_variable(state)
+  let #(state, type_) = next_unbound(state)
   binary_operator(left, "!=", right, type_, type_bool).compile(state)
 }
 
@@ -557,7 +662,7 @@ pub fn list(values: List(Expression(a))) -> Expression(a) {
   use state <- Expression
   use #(state, values) <- result.try(compile_values(state, values))
 
-  let #(state, element_type) = type_variable(state)
+  let #(state, element_type) = next_unbound(state)
   use #(state, element_type) <- result.try(
     try_fold_with_state(state, values, element_type, fn(state, type_, value) {
       unify(state, value.type_, type_)
@@ -590,7 +695,7 @@ fn add_message(document: Document, message: Document) -> Document {
 
 pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
   use state <- Expression
-  let #(state, type_) = type_variable(state)
+  let #(state, type_) = next_unbound(state)
   case message {
     None -> Ok(#(state, Compiled(doc.from_string("panic"), type_)))
     Some(message) -> {
@@ -606,7 +711,7 @@ pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
 
 pub fn todo_(message: Option(Expression(a))) -> Expression(Variable) {
   use state <- Expression
-  let #(state, type_) = type_variable(state)
+  let #(state, type_) = next_unbound(state)
   case message {
     None -> Ok(#(state, Compiled(doc.from_string("todo"), type_)))
     Some(message) -> {
@@ -784,10 +889,10 @@ pub fn tuple(values: List(Expression(a))) -> Expression(a) {
 pub fn tuple_index(tuple: Expression(a), index: Int) -> Expression(Variable) {
   use state <- Expression
   use #(state, tuple) <- result.try(tuple.compile(state))
-  let #(state, unwrapped) = unwrap_type(state, tuple.type_)
+  let unwrapped = unwrap_type(state, tuple.type_)
   use type_ <- result.try(case unwrapped {
-    Custom(..) as type_ | TypeVariable(..) as type_ | Function(..) as type_ ->
-      Error(InvalidTupleAccess(type_))
+    Custom(..) | Unbound(..) | Generic(..) | Function(..) ->
+      Error(InvalidTupleAccess(unwrapped))
     Tuple(elements:) ->
       case list_at(elements, index, 0) {
         Error(length) -> Error(TupleIndexOutOfBounds(length:, index:))
@@ -839,7 +944,7 @@ pub fn anonymous(
   function: FunctionBuilder(Unlabelled),
 ) -> Expression(Variable) {
   use state <- Expression
-  let #(state, return_type) = type_variable(state)
+  let #(state, return_type) = next_unbound(state)
 
   use #(state, function) <- result.try(
     function.compile(state, "", return_type, []),
@@ -850,7 +955,7 @@ pub fn anonymous(
     [
       doc.break("(", "("),
       function.parameters
-        |> list.map(parameter_to_doc)
+        |> list.map(parameter_to_doc(state, _))
         |> doc.join(doc.break(", ", ",")),
     ]
     |> doc.concat
@@ -959,13 +1064,13 @@ pub fn labelled_parameter(
   ))
 }
 
-fn parameter_to_doc(parameter: Parameter) -> Document {
+fn parameter_to_doc(state: State, parameter: Parameter) -> Document {
   case parameter.label {
     None ->
       doc.concat([
         doc.from_string(parameter.name),
         doc.from_string(": "),
-        doc.from_string(print_type(parameter.type_)),
+        doc.from_string(print_type(state, parameter.type_)),
       ])
     Some(label) ->
       doc.concat([
@@ -973,7 +1078,7 @@ fn parameter_to_doc(parameter: Parameter) -> Document {
         doc.from_string(" "),
         doc.from_string(parameter.name),
         doc.from_string(": "),
-        doc.from_string(print_type(parameter.type_)),
+        doc.from_string(print_type(state, parameter.type_)),
       ])
   }
 }
@@ -985,18 +1090,18 @@ pub fn function_body(body: Statement) -> FunctionBuilder(Unlabelled) {
 }
 
 pub fn call(
-  function: Expression(a),
-  arguments: List(Expression(a)),
+  function: Expression(_),
+  arguments: List(Expression(_)),
 ) -> Expression(Variable) {
   use state <- Expression
   use #(state, function) <- result.try(function.compile(state))
 
   use #(state, arguments) <- result.try(compile_values(state, arguments))
 
-  let #(state, called_type) = unwrap_type(state, function.type_)
+  let called_type = unwrap_type(state, function.type_)
 
   case called_type {
-    Custom(..) | Tuple(..) -> Error(InvalidCall(called_type))
+    Custom(..) | Tuple(..) | Generic(..) -> Error(InvalidCall(called_type))
     Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(arguments, parameters) {
         Error(Nil) -> {
@@ -1022,9 +1127,9 @@ pub fn call(
           Ok(#(state, Compiled(doc, return_type)))
         }
       }
-    TypeVariable(_) -> {
+    Unbound(_) -> {
       let parameter_types = list.map(arguments, fn(argument) { argument.type_ })
-      let #(state, return_type) = type_variable(state)
+      let #(state, return_type) = next_unbound(state)
 
       let function_type =
         Function(
@@ -1065,8 +1170,8 @@ pub fn function_capture(
   use #(state, before) <- result.try(compile_values(state, before_hole))
   use #(state, after) <- result.try(compile_values(state, after_hole))
 
-  let #(state, called_type) = unwrap_type(state, function.type_)
-  let #(state, parameter_type) = type_variable(state)
+  let called_type = unwrap_type(state, function.type_)
+  let #(state, parameter_type) = next_unbound(state)
 
   let argument_types =
     list.flatten([
@@ -1076,7 +1181,7 @@ pub fn function_capture(
     ])
 
   case called_type {
-    Custom(..) | Tuple(..) -> Error(InvalidCall(called_type))
+    Custom(..) | Tuple(..) | Generic(..) -> Error(InvalidCall(called_type))
     Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(argument_types, parameters) {
         Error(Nil) -> {
@@ -1107,8 +1212,8 @@ pub fn function_capture(
           Ok(#(state, Compiled(capture_doc(function, before, after), type_)))
         }
       }
-    TypeVariable(_) -> {
-      let #(state, return_type) = type_variable(state)
+    Unbound(_) -> {
+      let #(state, return_type) = next_unbound(state)
 
       let function_type =
         Function(
@@ -1159,7 +1264,7 @@ pub fn function(
 ) -> Definition {
   use state <- Definition
 
-  let #(state, return_type) = type_variable(state)
+  let #(state, return_type) = next_unbound(state)
 
   use #(state, function) <- result.try(
     function.compile(state, name, return_type, []),
@@ -1181,7 +1286,7 @@ pub fn function(
     [
       doc.break("(", "("),
       function.parameters
-        |> list.map(parameter_to_doc)
+        |> list.map(parameter_to_doc(state, _))
         |> doc.join(doc.break(", ", ",")),
     ]
     |> doc.concat
@@ -1229,7 +1334,7 @@ pub fn function(
       field_map: Some(field_map),
     )
 
-  let function_name = doc_to_expression(Compiled(doc.from_string(name), type_))
+  let function_name = instantiated(doc.from_string(name), type_)
 
   use #(state, rest) <- result.try(continue(function_name).compile(state))
 
@@ -1240,7 +1345,7 @@ pub fn function(
       doc.from_string(name),
       parameter_list,
       doc.from_string(" -> "),
-      doc.from_string(print_type(return_type)),
+      doc.from_string(print_type(state, return_type)),
       doc.from_string(" "),
       body_doc,
       doc.lines(2),
@@ -1265,8 +1370,7 @@ pub fn constant(
 
   use #(state, value) <- result.try(value.compile(state))
 
-  let constant_name =
-    doc_to_expression(Compiled(doc.from_string(name), value.type_))
+  let constant_name = instantiated(doc.from_string(name), value.type_)
 
   use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
@@ -1276,7 +1380,7 @@ pub fn constant(
       doc.from_string("const "),
       doc.from_string(name),
       doc.from_string(": "),
-      doc.from_string(print_type(value.type_)),
+      doc.from_string(print_type(state, value.type_)),
       doc.from_string(" = "),
       value.document,
       doc.lines(2),
@@ -1309,29 +1413,33 @@ pub fn doc_comment(
       rest.document,
     ]
       |> doc.concat
-      |> Compiled(TypeVariable(0)),
+      |> Compiled(Unbound(0)),
   ))
 }
 
-fn print_type(type_: Type) -> String {
-  case type_ {
+fn print_type(state: State, type_: Type) -> String {
+  case unwrap_type(state, type_) {
     Custom(module: _, name:, generics:) ->
       case generics {
         [] -> name
         _ ->
           name
           <> "("
-          <> string.join(list.map(generics, print_type), ", ")
+          <> string.join(list.map(generics, print_type(state, _)), ", ")
           <> ")"
       }
     Function(parameters:, return:, field_map: _) ->
       "fn("
-      <> string.join(list.map(parameters, print_type), ", ")
+      <> string.join(list.map(parameters, print_type(state, _)), ", ")
       <> ") -> "
-      <> print_type(return)
+      <> print_type(state, return)
     Tuple(elements:) ->
-      "#(" <> string.join(list.map(elements, print_type), ", ") <> ")"
-    TypeVariable(id:) -> generate_type_variable_name(id)
+      "#(" <> string.join(list.map(elements, print_type(state, _)), ", ") <> ")"
+    Unbound(id:) | Generic(id:) ->
+      case dict.get(state.type_variable_names, id) {
+        Ok(name) -> name
+        Error(_) -> generate_type_variable_name(id)
+      }
   }
 }
 
@@ -1410,10 +1518,10 @@ pub fn labelled_call(
   )
   let arguments = list.reverse(arguments)
 
-  let #(state, called_type) = unwrap_type(state, function.type_)
+  let called_type = unwrap_type(state, function.type_)
 
   let field_map = case called_type {
-    Custom(..) | Tuple(..) | TypeVariable(..) -> None
+    Custom(..) | Tuple(..) | Unbound(..) | Generic(..) -> None
     Function(field_map:, ..) -> field_map
   }
 
@@ -1422,10 +1530,10 @@ pub fn labelled_call(
     Some(field_map) -> reorder(arguments, field_map)
   })
 
-  let #(state, called_type) = unwrap_type(state, function.type_)
+  let called_type = unwrap_type(state, function.type_)
 
   case called_type {
-    Custom(..) | Tuple(..) -> Error(InvalidCall(called_type))
+    Custom(..) | Tuple(..) | Generic(..) -> Error(InvalidCall(called_type))
     Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(argument_types, parameters) {
         Error(Nil) -> {
@@ -1453,8 +1561,8 @@ pub fn labelled_call(
           ))
         }
       }
-    TypeVariable(_) -> {
-      let #(state, return_type) = type_variable(state)
+    Unbound(_) -> {
+      let #(state, return_type) = next_generic(state)
 
       let function_type =
         Function(
@@ -1597,12 +1705,30 @@ fn assert_no_labelled_arguments(
 
 pub opaque type CustomType {
   CustomType(
-    compile: fn(State, Type) -> Result(#(State, CustomTypeInfo), Error),
+    compile: fn(State, CustomTypeHead) ->
+      Result(#(State, CustomTypeInfo), Error),
+  )
+}
+
+pub opaque type TypeConstructors {
+  TypeConstructors(
+    compile: fn(State, Type) ->
+      Result(#(State, List(Constructor), Definition), Error),
   )
 }
 
 type CustomTypeInfo {
-  CustomTypeInfo(constructors: List(Constructor), rest: Definition)
+  CustomTypeInfo(
+    name: String,
+    type_: Type,
+    constructors: List(Constructor),
+    parameters: List(#(String, Type)),
+    rest: Definition,
+  )
+}
+
+type CustomTypeHead {
+  CustomTypeHead(name: String, parameters: List(#(String, Type)))
 }
 
 type Constructor {
@@ -1613,29 +1739,42 @@ pub type Field {
   Field(label: Option(String), type_: Type)
 }
 
-pub fn custom_type(
-  name: String,
-  continue: fn(Type) -> CustomType,
-) -> Definition {
+pub fn custom_type(name: String, continue: fn() -> CustomType) -> Definition {
   use state <- Definition
 
-  let type_ = Custom(module: state.module, name:, generics: [])
+  let info = CustomTypeHead(name, parameters: [])
 
-  let custom_type = continue(type_)
-  use #(state, custom_type) <- result.try(custom_type.compile(state, type_))
+  let custom_type = continue()
+  use #(state, custom_type) <- result.try(custom_type.compile(state, info))
   use #(state, rest) <- result.try(custom_type.rest.compile(state))
+
+  let parameters = case custom_type.parameters {
+    [] -> doc.empty
+    _ ->
+      doc.concat([
+        doc.from_string("("),
+        doc.join(
+          list.map(custom_type.parameters, fn(parameter) {
+            doc.from_string(parameter.0)
+          }),
+          doc.from_string(", "),
+        ),
+        doc.from_string(")"),
+      ])
+  }
 
   use <- bool.lazy_guard(custom_type.constructors == [], fn() {
     Ok(#(
       state,
       [
         doc.from_string("type "),
-        doc.from_string(name),
+        doc.from_string(custom_type.name),
+        parameters,
         doc.lines(2),
         rest.document,
       ]
         |> doc.concat
-        |> Compiled(type_),
+        |> Compiled(custom_type.type_),
     ))
   })
 
@@ -1651,12 +1790,12 @@ pub fn custom_type(
               doc.join(
                 list.map(constructor.fields, fn(field) {
                   case field.label {
-                    None -> doc.from_string(print_type(field.type_))
+                    None -> doc.from_string(print_type(state, field.type_))
                     Some(label) ->
                       [
                         doc.from_string(label),
                         doc.from_string(": "),
-                        doc.from_string(print_type(field.type_)),
+                        doc.from_string(print_type(state, field.type_)),
                       ]
                       |> doc.concat
                   }
@@ -1681,7 +1820,8 @@ pub fn custom_type(
     state,
     [
       doc.from_string("type "),
-      doc.from_string(name),
+      doc.from_string(custom_type.name),
+      parameters,
       doc.from_string(" {"),
       constructors,
       doc.line,
@@ -1690,16 +1830,16 @@ pub fn custom_type(
       rest.document,
     ]
       |> doc.concat
-      |> Compiled(type_),
+      |> Compiled(custom_type.type_),
   ))
 }
 
 pub fn constructor(
   name: String,
   fields: List(Field),
-  continue: fn(Expression(Constant)) -> CustomType,
-) -> CustomType {
-  use state, type_ <- CustomType
+  continue: fn(Expression(Constant)) -> TypeConstructors,
+) -> TypeConstructors {
+  use state, type_ <- TypeConstructors
 
   use #(field_map_fields, arity) <- result.try(
     list.try_fold(fields, #(dict.new(), 0), fn(pair, parameter) {
@@ -1726,24 +1866,65 @@ pub fn constructor(
       )
   }
 
-  let expression = Compiled(doc.from_string(name), constructor_type)
+  let expression = instantiated(doc.from_string(name), constructor_type)
 
-  let custom_type = continue(doc_to_expression(expression))
-  use #(state, info) <- result.try(custom_type.compile(state, type_))
+  let custom_type = continue(expression)
+  use #(state, constructors, rest) <- result.try(custom_type.compile(
+    state,
+    type_,
+  ))
+
+  Ok(#(state, [Constructor(name:, fields:), ..constructors], rest))
+}
+
+pub fn type_parameter(
+  name: String,
+  continue: fn(Type) -> CustomType,
+) -> CustomType {
+  use state, info <- CustomType
+
+  let #(state, type_) = named_generic(state, name)
+
+  let info =
+    CustomTypeHead(
+      ..info,
+      parameters: list.append(info.parameters, [#(name, type_)]),
+    )
+
+  continue(type_).compile(state, info)
+}
+
+pub fn custom_type_constructors(
+  continue: fn(Type) -> TypeConstructors,
+) -> CustomType {
+  use state, info <- CustomType
+
+  let parameters = list.map(info.parameters, fn(parameter) { parameter.1 })
+
+  let type_ =
+    Custom(module: state.module, name: info.name, generics: parameters)
+
+  use #(state, constructors, rest) <- result.try(continue(type_).compile(
+    state,
+    type_,
+  ))
 
   Ok(#(
     state,
-    CustomTypeInfo(..info, constructors: [
-      Constructor(name:, fields:),
-      ..info.constructors
-    ]),
+    CustomTypeInfo(
+      constructors:,
+      parameters: info.parameters,
+      rest:,
+      name: info.name,
+      type_:,
+    ),
   ))
 }
 
-pub fn end_custom_type(continue: fn() -> Definition) -> CustomType {
-  use state, _type <- CustomType
+pub fn end_custom_type(continue: fn() -> Definition) -> TypeConstructors {
+  use state, _type <- TypeConstructors
 
   let rest = continue()
 
-  Ok(#(state, CustomTypeInfo(constructors: [], rest:)))
+  Ok(#(state, [], rest))
 }
