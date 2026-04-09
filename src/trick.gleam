@@ -62,15 +62,15 @@ type State {
   )
 }
 
-const type_int = Custom("gleam", "Int", [])
+const type_int: Type = Custom("gleam", "Int", [])
 
-const type_float = Custom("gleam", "Float", [])
+const type_float: Type = Custom("gleam", "Float", [])
 
-const type_string = Custom("gleam", "String", [])
+const type_string: Type = Custom("gleam", "String", [])
 
-const type_bool = Custom("gleam", "Bool", [])
+const type_bool: Type = Custom("gleam", "Bool", [])
 
-const type_nil = Custom("gleam", "Nil", [])
+const type_nil: Type = Custom("gleam", "Nil", [])
 
 fn type_list(element: Type) -> Type {
   Custom("gleam", "List", [element])
@@ -83,133 +83,50 @@ fn type_variable(state: State) -> #(State, Type) {
   #(state, type_)
 }
 
-fn compile(
-  expression: Expression(_),
-  continue: fn(Compiled) -> Expression(_),
-) -> Expression(_) {
-  try(expression.compile, continue)
-}
-
-fn compile_statement(
-  statement: Statement,
-  continue: fn(Compiled) -> Expression(_),
-) -> Expression(_) {
-  try(statement.compile, continue)
-}
-
-fn compile_definition(
-  definition: Definition,
-  continue: fn(Compiled) -> Expression(_),
-) -> Expression(_) {
-  try(definition.compile, continue)
-}
-
-fn return(value: Compiled) -> Expression(a) {
+fn doc_to_expression(value: Compiled) -> Expression(a) {
   Expression(fn(state) { Ok(#(state, value)) })
 }
 
-fn error(error: Error) -> Expression(a) {
-  Expression(fn(_state) { Error(error) })
-}
-
-fn pure(value: Result(a, Error)) -> fn(State) -> Result(#(State, a), Error) {
-  fn(state) {
-    case value {
-      Error(error) -> Error(error)
-      Ok(value) -> Ok(#(state, value))
-    }
-  }
-}
-
-fn try(
-  f: fn(State) -> Result(#(State, a), Error),
-  continue: fn(a) -> Expression(_),
-) -> Expression(_) {
-  use state <- Expression
-  case f(state) {
-    Error(error) -> Error(error)
-    Ok(#(state, value)) -> continue(value).compile(state)
-  }
-}
-
-fn then(
-  f: fn(State) -> #(State, a),
-  continue: fn(a) -> Expression(_),
-) -> Expression(_) {
-  use state <- Expression
-  let #(state, value) = f(state)
-  continue(value).compile(state)
-}
-
-fn compile_expressions(
-  list: List(Expression(a)),
-  continue: fn(List(Compiled)) -> Expression(a),
-) -> Expression(a) {
-  use state <- Expression
-  use #(state, values) <- result.try(do_compile_expressions(state, list, []))
-  continue(values).compile(state)
-}
-
-fn do_compile_expressions(
+fn compile_values(
   state: State,
-  list: List(Expression(a)),
+  values: List(Expression(a)),
+) -> Result(#(State, List(Compiled)), Error) {
+  do_compile_values(state, values, [])
+}
+
+fn do_compile_values(
+  state: State,
+  values: List(Expression(a)),
   out: List(Compiled),
 ) -> Result(#(State, List(Compiled)), Error) {
-  case list {
+  case values {
     [] -> Ok(#(state, list.reverse(out)))
-    [first, ..rest] ->
-      case first.compile(state) {
+    [value, ..values] ->
+      case value.compile(state) {
+        Ok(#(state, compiled)) ->
+          do_compile_values(state, values, [compiled, ..out])
         Error(error) -> Error(error)
-        Ok(#(state, value)) ->
-          do_compile_expressions(state, rest, [value, ..out])
       }
   }
 }
 
-fn fold_list(
-  list: List(a),
-  initial: fn(State) -> #(State, b),
-  f: fn(b, a) -> fn(State) -> Result(#(State, b), Error),
-  continue: fn(b) -> Expression(_),
-) -> Expression(_) {
-  use state <- Expression
-  use #(state, value) <- result.try(
-    list.try_fold(list, initial(state), fn(acc, value) {
-      let #(state, acc) = acc
-      f(acc, value)(state)
-    }),
-  )
-
-  continue(value).compile(state)
-}
-
-fn try_each(
-  list: List(a),
-  f: fn(a) -> fn(State) -> Result(#(State, _), Error),
-  continue: fn() -> Expression(a),
-) -> Expression(a) {
-  use state <- Expression
-  use state <- result.try(
-    list.try_fold(list, state, fn(state, value) {
-      case f(value)(state) {
-        Ok(#(state, _)) -> Ok(state)
+fn try_fold_with_state(
+  state: State,
+  list: List(elem),
+  acc: acc,
+  value: fn(State, acc, elem) -> Result(#(State, acc), Error),
+) -> Result(#(State, acc), Error) {
+  case list {
+    [] -> Ok(#(state, acc))
+    [first, ..rest] ->
+      case value(state, acc, first) {
+        Ok(#(state, acc)) -> try_fold_with_state(state, rest, acc, value)
         Error(error) -> Error(error)
       }
-    }),
-  )
-
-  continue().compile(state)
+  }
 }
 
-fn unify(a: Type, with b: Type) -> fn(State) -> Result(#(State, Type), Error) {
-  do_unify(_, a, b)
-}
-
-fn do_unify(
-  state: State,
-  a: Type,
-  with b: Type,
-) -> Result(#(State, Type), Error) {
+fn unify(state: State, a: Type, with b: Type) -> Result(#(State, Type), Error) {
   use <- bool.guard(a == b, Ok(#(state, a)))
 
   let mismatch = TypeMismatch(expected: b, got: a)
@@ -229,7 +146,7 @@ fn do_unify(
             list.try_fold(generics, #(state, []), fn(acc, pair) {
               let #(state, generics) = acc
               let #(a, b) = pair
-              case do_unify(state, a, b) {
+              case unify(state, a, b) {
                 Ok(#(state, type_)) -> Ok(#(state, [type_, ..generics]))
                 Error(error) -> Error(error)
               }
@@ -252,7 +169,7 @@ fn do_unify(
             list.try_fold(parameters, #(state, []), fn(acc, pair) {
               let #(state, parameters) = acc
               let #(a, b) = pair
-              case do_unify(state, a, b) {
+              case unify(state, a, b) {
                 Ok(#(state, type_)) -> Ok(#(state, [type_, ..parameters]))
                 Error(error) -> Error(error)
               }
@@ -260,7 +177,7 @@ fn do_unify(
           case parameters {
             Error(error) -> Error(error)
             Ok(#(state, parameters)) ->
-              case do_unify(state, r1, r2) {
+              case unify(state, r1, r2) {
                 Error(error) -> Error(error)
                 Ok(#(state, return)) ->
                   Ok(#(state, Function(list.reverse(parameters), return, None)))
@@ -276,7 +193,7 @@ fn do_unify(
             list.try_fold(elements, #(state, []), fn(acc, pair) {
               let #(state, elements) = acc
               let #(a, b) = pair
-              case do_unify(state, a, b) {
+              case unify(state, a, b) {
                 Ok(#(state, type_)) -> Ok(#(state, [type_, ..elements]))
                 Error(error) -> Error(error)
               }
@@ -305,8 +222,8 @@ fn unify_type_variable(
 ) -> Result(#(State, Type), Error) {
   case dict.get(state.resolved_variables, id) {
     Ok(resolved_type) if order == VariableFirst ->
-      do_unify(state, resolved_type, type_)
-    Ok(resolved_type) -> do_unify(state, type_, resolved_type)
+      unify(state, resolved_type, type_)
+    Ok(resolved_type) -> unify(state, type_, resolved_type)
     Error(_) -> {
       let state =
         State(
@@ -318,25 +235,25 @@ fn unify_type_variable(
   }
 }
 
-fn unwrap_type(type_: Type) -> fn(State) -> #(State, Type) {
-  fn(state: State) {
-    let unwrapped = case type_ {
-      Custom(..) | Tuple(..) | Function(..) -> type_
-      TypeVariable(id:) ->
-        case dict.get(state.resolved_variables, id) {
-          Error(_) -> type_
-          Ok(type_) -> type_
-        }
-    }
-    #(state, unwrapped)
+fn unwrap_type(state: State, type_: Type) -> #(State, Type) {
+  let unwrapped = case type_ {
+    Custom(..) | Tuple(..) | Function(..) -> type_
+    TypeVariable(id:) ->
+      case dict.get(state.resolved_variables, id) {
+        Error(_) -> type_
+        Ok(type_) -> type_
+      }
   }
+  #(state, unwrapped)
 }
 
-const width = 80
+const width: Int = 80
 
-const indent = 2
+const indent: Int = 2
 
-pub fn expression_to_string(expression: Expression(a)) -> Result(String, Error) {
+pub fn expression_to_string(
+  expression: Expression(a),
+) -> Result(String, Error) {
   case expression.compile(new_state()) {
     Ok(#(_state, expression)) -> Ok(doc.to_string(expression.document, width))
     Error(error) -> Error(error)
@@ -359,7 +276,7 @@ pub fn int(value: Int) -> Expression(a) {
   |> int.to_string
   |> doc.from_string
   |> Compiled(type_int)
-  |> return
+  |> doc_to_expression
 }
 
 pub fn int_base2(value: Int) -> Expression(a) {
@@ -368,7 +285,7 @@ pub fn int_base2(value: Int) -> Expression(a) {
   |> doc.from_string
   |> doc.prepend(doc.from_string("0b"))
   |> Compiled(type_int)
-  |> return
+  |> doc_to_expression
 }
 
 pub fn int_base8(value: Int) -> Expression(a) {
@@ -377,7 +294,7 @@ pub fn int_base8(value: Int) -> Expression(a) {
   |> doc.from_string
   |> doc.prepend(doc.from_string("0o"))
   |> Compiled(type_int)
-  |> return
+  |> doc_to_expression
 }
 
 pub fn int_base16(value: Int) -> Expression(a) {
@@ -386,7 +303,7 @@ pub fn int_base16(value: Int) -> Expression(a) {
   |> doc.from_string
   |> doc.prepend(doc.from_string("0x"))
   |> Compiled(type_int)
-  |> return
+  |> doc_to_expression
 }
 
 pub fn float(value: Float) -> Expression(a) {
@@ -394,7 +311,7 @@ pub fn float(value: Float) -> Expression(a) {
   |> float.to_string
   |> doc.from_string
   |> Compiled(type_float)
-  |> return
+  |> doc_to_expression
 }
 
 pub fn string(value: String) -> Expression(a) {
@@ -402,7 +319,7 @@ pub fn string(value: String) -> Expression(a) {
   |> escape_string_literal
   |> doc.from_string
   |> Compiled(type_string)
-  |> return
+  |> doc_to_expression
 }
 
 pub fn bool(value: Bool) -> Expression(a) {
@@ -410,14 +327,14 @@ pub fn bool(value: Bool) -> Expression(a) {
   |> bool.to_string
   |> doc.from_string
   |> Compiled(type_bool)
-  |> return
+  |> doc_to_expression
 }
 
 pub fn nil() -> Expression(a) {
   "Nil"
   |> doc.from_string
   |> Compiled(type_nil)
-  |> return
+  |> doc_to_expression
 }
 
 fn escape_string_literal(string: String) -> String {
@@ -452,15 +369,18 @@ fn binary_operator(
   operand_type: Type,
   result_type: Type,
 ) -> Expression(_) {
-  use left <- compile(left)
-  use right <- compile(right)
-  use _ <- try(unify(left.type_, operand_type))
-  use _ <- try(unify(right.type_, operand_type))
+  use state <- Expression
+  use #(state, left) <- result.try(left.compile(state))
+  use #(state, right) <- result.try(right.compile(state))
+  use #(state, _) <- result.try(unify(state, left.type_, operand_type))
+  use #(state, _) <- result.try(unify(state, right.type_, operand_type))
 
-  [left.document, doc.from_string(" " <> operator <> " "), right.document]
-  |> doc.concat
-  |> Compiled(result_type)
-  |> return
+  Ok(#(
+    state,
+    [left.document, doc.from_string(" " <> operator <> " "), right.document]
+      |> doc.concat
+      |> Compiled(result_type),
+  ))
 }
 
 pub fn add(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
@@ -502,7 +422,10 @@ pub fn multiply_float(
   binary_operator(left, "*.", right, type_float, type_float)
 }
 
-pub fn divide(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
+pub fn divide(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
   binary_operator(left, "/", right, type_int, type_int)
 }
 
@@ -532,17 +455,22 @@ pub fn or(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "||", right, type_bool, type_bool)
 }
 
-pub fn equal(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
-  use type_ <- then(type_variable)
-  binary_operator(left, "==", right, type_, type_bool)
+pub fn equal(
+  left: Expression(_),
+  right: Expression(_),
+) -> Expression(Variable) {
+  use state <- Expression
+  let #(state, type_) = type_variable(state)
+  binary_operator(left, "==", right, type_, type_bool).compile(state)
 }
 
 pub fn not_equal(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  use type_ <- then(type_variable)
-  binary_operator(left, "!=", right, type_, type_bool)
+  use state <- Expression
+  let #(state, type_) = type_variable(state)
+  binary_operator(left, "!=", right, type_, type_bool).compile(state)
 }
 
 pub fn less_than(
@@ -606,12 +534,15 @@ fn unary_operator(
   value: Expression(_),
   type_: Type,
 ) -> Expression(_) {
-  use value <- compile(value)
-  use type_ <- try(unify(value.type_, type_))
-  [doc.from_string(operator), value.document]
-  |> doc.concat
-  |> Compiled(type_)
-  |> return
+  use state <- Expression
+  use #(state, value) <- result.try(value.compile(state))
+  use #(state, type_) <- result.try(unify(state, value.type_, type_))
+  Ok(#(
+    state,
+    [doc.from_string(operator), value.document]
+      |> doc.concat
+      |> Compiled(type_),
+  ))
 }
 
 pub fn negate_int(value: Expression(a)) -> Expression(Variable) {
@@ -623,22 +554,28 @@ pub fn negate_bool(value: Expression(a)) -> Expression(Variable) {
 }
 
 pub fn list(values: List(Expression(a))) -> Expression(a) {
-  use values <- compile_expressions(values)
+  use state <- Expression
+  use #(state, values) <- result.try(compile_values(state, values))
 
-  use element_type <- fold_list(values, type_variable, fn(type_, value) {
-    unify(value.type_, type_)
-  })
+  let #(state, element_type) = type_variable(state)
+  use #(state, element_type) <- result.try(
+    try_fold_with_state(state, values, element_type, fn(state, type_, value) {
+      unify(state, value.type_, type_)
+    }),
+  )
 
-  values
-  |> list.map(fn(value) { value.document })
-  |> doc.join(doc.break(", ", ","))
-  |> doc.prepend(doc.break("[", "["))
-  |> doc.nest(indent)
-  |> doc.append(doc.break("", ", "))
-  |> doc.append(doc.from_string("]"))
-  |> doc.group
-  |> Compiled(type_list(element_type))
-  |> return
+  Ok(#(
+    state,
+    values
+      |> list.map(fn(value) { value.document })
+      |> doc.join(doc.break(", ", ","))
+      |> doc.prepend(doc.break("[", "["))
+      |> doc.nest(indent)
+      |> doc.append(doc.break("", ", "))
+      |> doc.append(doc.from_string("]"))
+      |> doc.group
+      |> Compiled(type_list(element_type)),
+  ))
 }
 
 fn add_message(document: Document, message: Document) -> Document {
@@ -652,30 +589,32 @@ fn add_message(document: Document, message: Document) -> Document {
 }
 
 pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
-  use type_ <- then(type_variable)
+  use state <- Expression
+  let #(state, type_) = type_variable(state)
   case message {
-    None -> return(Compiled(doc.from_string("panic"), type_))
+    None -> Ok(#(state, Compiled(doc.from_string("panic"), type_)))
     Some(message) -> {
-      use message <- compile(message)
-      use _ <- try(unify(message.type_, type_string))
-      return(Compiled(
-        add_message(doc.from_string("panic"), message.document),
-        type_,
+      use #(state, message) <- result.try(message.compile(state))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      Ok(#(
+        state,
+        Compiled(add_message(doc.from_string("panic"), message.document), type_),
       ))
     }
   }
 }
 
 pub fn todo_(message: Option(Expression(a))) -> Expression(Variable) {
-  use type_ <- then(type_variable)
+  use state <- Expression
+  let #(state, type_) = type_variable(state)
   case message {
-    None -> return(Compiled(doc.from_string("todo"), type_))
+    None -> Ok(#(state, Compiled(doc.from_string("todo"), type_)))
     Some(message) -> {
-      use message <- compile(message)
-      use _ <- try(unify(message.type_, type_string))
-      return(Compiled(
-        add_message(doc.from_string("todo"), message.document),
-        type_,
+      use #(state, message) <- result.try(message.compile(state))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      Ok(#(
+        state,
+        Compiled(add_message(doc.from_string("todo"), message.document), type_),
       ))
     }
   }
@@ -685,16 +624,17 @@ pub fn echo_(
   value: Expression(a),
   message: Option(Expression(a)),
 ) -> Expression(Variable) {
-  use value <- compile(value)
+  use state <- Expression
+  use #(state, value) <- result.try(value.compile(state))
 
   let echo_ = doc.prepend(doc.from_string("echo "), to: value.document)
 
   case message {
-    None -> return(Compiled(echo_, value.type_))
+    None -> Ok(#(state, Compiled(echo_, value.type_)))
     Some(message) -> {
-      use message <- compile(message)
-      use _ <- try(unify(message.type_, type_string))
-      return(Compiled(add_message(echo_, message.document), value.type_))
+      use #(state, message) <- result.try(message.compile(state))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      Ok(#(state, Compiled(add_message(echo_, message.document), value.type_)))
     }
   }
 }
@@ -704,8 +644,8 @@ pub fn variable(
   value: Expression(a),
   continue: fn(Expression(Variable)) -> Statement,
 ) -> Statement {
-  use <- statement
-  use value <- compile(value)
+  use state <- Statement
+  use #(state, value) <- result.try(value.compile(state))
 
   let declaration =
     [
@@ -717,14 +657,18 @@ pub fn variable(
     |> grouped
     |> doc.append(doc.line)
 
-  let variable_expression = return(Compiled(doc.from_string(name), value.type_))
+  let variable_expression =
+    doc_to_expression(Compiled(doc.from_string(name), value.type_))
 
   let rest = continue(variable_expression)
-  use rest <- compile_statement(rest)
+  use #(state, rest) <- result.try(rest.compile(state))
 
-  return(Compiled(
-    doc.prepend(declaration, to: rest.document) |> doc.force_break,
-    rest.type_,
+  Ok(#(
+    state,
+    Compiled(
+      doc.prepend(declaration, to: rest.document) |> doc.force_break,
+      rest.type_,
+    ),
   ))
 }
 
@@ -732,30 +676,28 @@ fn grouped(documents: List(Document)) -> Document {
   documents |> doc.concat |> doc.nest(indent) |> doc.group
 }
 
-fn statement(f: fn() -> Expression(a)) -> Statement {
-  expression(f())
-}
-
 pub fn expression(expression: Expression(a)) -> Statement {
   Statement(expression.compile)
 }
 
 pub fn discard(discarded: Statement, continue: fn() -> Statement) -> Statement {
-  use <- statement
-  use statement <- compile_statement(discarded)
+  use state <- Statement
+  use #(state, statement) <- result.try(discarded.compile(state))
   let rest = continue()
-  use rest <- compile_statement(rest)
-  [statement.document, doc.line, rest.document]
-  |> doc.concat
-  |> doc.force_break
-  |> Compiled(rest.type_)
-  |> return
+  use #(state, rest) <- result.try(rest.compile(state))
+  Ok(#(
+    state,
+    [statement.document, doc.line, rest.document]
+      |> doc.concat
+      |> doc.force_break
+      |> Compiled(rest.type_),
+  ))
 }
 
 pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
-  use <- statement
+  use state <- Statement
   let rest = continue()
-  use rest <- compile_statement(rest)
+  use #(state, rest) <- result.try(rest.compile(state))
 
   let comment =
     comment
@@ -763,89 +705,106 @@ pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
     |> list.map(fn(line) { doc.from_string("// " <> line) })
     |> doc.join(doc.line)
 
-  [comment, doc.line, rest.document]
-  |> doc.concat
-  |> doc.force_break
-  |> Compiled(rest.type_)
-  |> return
+  Ok(#(
+    state,
+    [comment, doc.line, rest.document]
+      |> doc.concat
+      |> doc.force_break
+      |> Compiled(rest.type_),
+  ))
 }
 
 pub fn block(inner: Statement) -> Expression(Variable) {
-  use inner <- compile_statement(inner)
+  use state <- Expression
+  use #(state, inner) <- result.try(inner.compile(state))
 
-  [
-    doc.break("{ ", "{"),
-    inner.document,
-  ]
-  |> doc.concat
-  |> doc.nest(indent)
-  |> doc.append(doc.break(" ", ""))
-  |> doc.append(doc.from_string("}"))
-  |> doc.group
-  |> Compiled(inner.type_)
-  |> return
+  Ok(#(
+    state,
+    [
+      doc.break("{ ", "{"),
+      inner.document,
+    ]
+      |> doc.concat
+      |> doc.nest(indent)
+      |> doc.append(doc.break(" ", ""))
+      |> doc.append(doc.from_string("}"))
+      |> doc.group
+      |> Compiled(inner.type_),
+  ))
 }
 
 pub fn assert_(
   condition: Expression(a),
   message: Option(Expression(a)),
 ) -> Statement {
-  use <- statement
-  use condition <- compile(condition)
-  use _ <- try(unify(condition.type_, type_bool))
+  use state <- Statement
+  use #(state, condition) <- result.try(condition.compile(state))
+  use #(state, _) <- result.try(unify(state, condition.type_, type_bool))
 
   let assert_ = doc.prepend(doc.from_string("assert "), to: condition.document)
 
   case message {
-    None -> return(Compiled(doc.force_break(assert_), type_nil))
+    None -> Ok(#(state, Compiled(doc.force_break(assert_), type_nil)))
     Some(message) -> {
-      use message <- compile(message)
-      use _ <- try(unify(message.type_, type_string))
-      return(Compiled(
-        add_message(assert_, message.document) |> doc.force_break,
-        type_nil,
+      use #(state, message) <- result.try(message.compile(state))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      Ok(#(
+        state,
+        Compiled(
+          add_message(assert_, message.document) |> doc.force_break,
+          type_nil,
+        ),
       ))
     }
   }
 }
 
 pub fn tuple(values: List(Expression(a))) -> Expression(a) {
-  use values <- compile_expressions(values)
+  use state <- Expression
+  use #(state, values) <- result.try(compile_values(state, values))
 
   let #(documents, types) =
     values
     |> list.map(fn(value) { #(value.document, value.type_) })
     |> list.unzip
 
-  documents
-  |> doc.join(doc.break(", ", ","))
-  |> doc.prepend(doc.break("#(", "#("))
-  |> doc.nest(indent)
-  |> doc.append(doc.break("", ", "))
-  |> doc.append(doc.from_string(")"))
-  |> doc.group
-  |> Compiled(Tuple(types))
-  |> return
+  Ok(#(
+    state,
+    documents
+      |> doc.join(doc.break(", ", ","))
+      |> doc.prepend(doc.break("#(", "#("))
+      |> doc.nest(indent)
+      |> doc.append(doc.break("", ", "))
+      |> doc.append(doc.from_string(")"))
+      |> doc.group
+      |> Compiled(Tuple(types)),
+  ))
 }
 
 pub fn tuple_index(tuple: Expression(a), index: Int) -> Expression(Variable) {
-  use tuple <- compile(tuple)
-  use unwrapped <- then(unwrap_type(tuple.type_))
-  use type_ <- try(
-    pure(case unwrapped {
-      Custom(..) as type_ | TypeVariable(..) as type_ | Function(..) as type_ ->
-        Error(InvalidTupleAccess(type_))
-      Tuple(elements:) ->
-        case list_at(elements, index, 0) {
-          Error(length) -> Error(TupleIndexOutOfBounds(length:, index:))
-          Ok(type_) -> Ok(type_)
-        }
-    }),
-  )
-  [tuple.document, doc.from_string("."), doc.from_string(int.to_string(index))]
-  |> doc.concat
-  |> Compiled(type_)
-  |> return
+  use state <- Expression
+  use #(state, tuple) <- result.try(tuple.compile(state))
+  let #(state, unwrapped) = unwrap_type(state, tuple.type_)
+  use type_ <- result.try(case unwrapped {
+    Custom(..) as type_ | TypeVariable(..) as type_ | Function(..) as type_ ->
+      Error(InvalidTupleAccess(type_))
+    Tuple(elements:) ->
+      case list_at(elements, index, 0) {
+        Error(length) -> Error(TupleIndexOutOfBounds(length:, index:))
+        Ok(type_) -> Ok(type_)
+      }
+  })
+
+  Ok(#(
+    state,
+    [
+      tuple.document,
+      doc.from_string("."),
+      doc.from_string(int.to_string(index)),
+    ]
+      |> doc.concat
+      |> Compiled(type_),
+  ))
 }
 
 fn list_at(list: List(a), index: Int, length: Int) -> Result(a, Int) {
@@ -876,11 +835,16 @@ type Parameter {
   Parameter(name: String, label: Option(String), type_: Type)
 }
 
-pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression(Variable) {
-  use return_type <- then(type_variable)
+pub fn anonymous(
+  function: FunctionBuilder(Unlabelled),
+) -> Expression(Variable) {
+  use state <- Expression
+  let #(state, return_type) = type_variable(state)
 
-  use function <- try(function.compile(_, "", return_type, []))
-  use body <- compile_statement(function.body)
+  use #(state, function) <- result.try(
+    function.compile(state, "", return_type, []),
+  )
+  use #(state, body) <- result.try(function.body.compile(state))
 
   let parameter_list =
     [
@@ -906,7 +870,7 @@ pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression(Variable) 
     |> doc.append(doc.from_string("}"))
     |> doc.group
 
-  use return_type <- try(unify(body.type_, return_type))
+  use #(state, return_type) <- result.try(unify(state, body.type_, return_type))
 
   let type_ =
     Function(
@@ -917,10 +881,12 @@ pub fn anonymous(function: FunctionBuilder(Unlabelled)) -> Expression(Variable) 
       field_map: None,
     )
 
-  [doc.from_string("fn"), parameter_list, doc.from_string(" "), body_doc]
-  |> doc.concat
-  |> Compiled(type_)
-  |> return
+  Ok(#(
+    state,
+    [doc.from_string("fn"), parameter_list, doc.from_string(" "), body_doc]
+      |> doc.concat
+      |> Compiled(type_),
+  ))
 }
 
 pub fn recursive(
@@ -931,7 +897,7 @@ pub fn recursive(
   let type_ =
     Function(parameters: parameter_types, return: return_type, field_map: None)
 
-  let expression = return(Compiled(doc.from_string(name), type_))
+  let expression = doc_to_expression(Compiled(doc.from_string(name), type_))
 
   let body = continue(expression)
 
@@ -946,7 +912,7 @@ pub fn parameter(
   use state, function_name, function_type, parameters <- FunctionBuilder
 
   let expression = Compiled(doc.from_string(name), type_)
-  let function = continue(return(expression))
+  let function = continue(doc_to_expression(expression))
 
   let parameter = Parameter(name, None, type_)
   use #(state, function) <- result.try(function.compile(
@@ -974,7 +940,7 @@ pub fn labelled_parameter(
   use state, function_name, function_type, parameters <- FunctionBuilder
 
   let expression = Compiled(doc.from_string(name), type_)
-  let function = continue(return(expression))
+  let function = continue(doc_to_expression(expression))
 
   let parameter = Parameter(name, Some(label), type_)
   use #(state, function) <- result.try(function.compile(
@@ -1022,36 +988,43 @@ pub fn call(
   function: Expression(a),
   arguments: List(Expression(a)),
 ) -> Expression(Variable) {
-  use function <- compile(function)
+  use state <- Expression
+  use #(state, function) <- result.try(function.compile(state))
 
-  use arguments <- compile_expressions(arguments)
+  use #(state, arguments) <- result.try(compile_values(state, arguments))
 
-  use called_type <- then(unwrap_type(function.type_))
+  let #(state, called_type) = unwrap_type(state, function.type_)
 
   case called_type {
-    Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
+    Custom(..) | Tuple(..) -> Error(InvalidCall(called_type))
     Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(arguments, parameters) {
         Error(Nil) -> {
           let expected_length = list.length(parameters)
           let argument_length = list.length(arguments)
-          error(IncorrectNumberOfArguments(
+          Error(IncorrectNumberOfArguments(
             expected: expected_length,
             got: argument_length,
           ))
         }
         Ok(zipped) -> {
-          use <- try_each(zipped, fn(pair) {
-            let #(arg, param) = pair
-            unify(arg.type_, with: param)
-          })
+          use state <- result.try(
+            list.try_fold(zipped, state, fn(state, pair) {
+              let #(arg, param) = pair
+              case unify(state, arg.type_, with: param) {
+                Ok(#(state, _)) -> Ok(state)
+                Error(error) -> Error(error)
+              }
+            }),
+          )
 
-          call_doc(arguments, function, return_type)
+          let doc = call_doc(arguments, function)
+          Ok(#(state, Compiled(doc, return_type)))
         }
       }
     TypeVariable(_) -> {
       let parameter_types = list.map(arguments, fn(argument) { argument.type_ })
-      use return_type <- then(type_variable)
+      let #(state, return_type) = type_variable(state)
 
       let function_type =
         Function(
@@ -1059,18 +1032,15 @@ pub fn call(
           return: return_type,
           field_map: None,
         )
-      use _ <- try(unify(called_type, function_type))
+      use #(state, _) <- result.try(unify(state, called_type, function_type))
 
-      call_doc(arguments, function, return_type)
+      let doc = call_doc(arguments, function)
+      Ok(#(state, Compiled(doc, return_type)))
     }
   }
 }
 
-fn call_doc(
-  arguments: List(Compiled),
-  function: Compiled,
-  return_type: Type,
-) -> Expression(a) {
+fn call_doc(arguments: List(Compiled), function: Compiled) -> Document {
   [
     doc.break("(", "("),
     arguments
@@ -1083,8 +1053,6 @@ fn call_doc(
   |> doc.append(doc.break("", ","))
   |> doc.append(doc.from_string(")"))
   |> doc.group
-  |> Compiled(return_type)
-  |> return
 }
 
 pub fn function_capture(
@@ -1092,12 +1060,13 @@ pub fn function_capture(
   before_hole: List(Expression(a)),
   after_hole: List(Expression(a)),
 ) -> Expression(Variable) {
-  use function <- compile(function)
-  use before <- compile_expressions(before_hole)
-  use after <- compile_expressions(after_hole)
+  use state <- Expression
+  use #(state, function) <- result.try(function.compile(state))
+  use #(state, before) <- result.try(compile_values(state, before_hole))
+  use #(state, after) <- result.try(compile_values(state, after_hole))
 
-  use called_type <- then(unwrap_type(function.type_))
-  use parameter_type <- then(type_variable)
+  let #(state, called_type) = unwrap_type(state, function.type_)
+  let #(state, parameter_type) = type_variable(state)
 
   let argument_types =
     list.flatten([
@@ -1107,28 +1076,39 @@ pub fn function_capture(
     ])
 
   case called_type {
-    Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
+    Custom(..) | Tuple(..) -> Error(InvalidCall(called_type))
     Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(argument_types, parameters) {
         Error(Nil) -> {
           let expected_length = list.length(parameters)
           let argument_length = list.length(argument_types)
-          error(IncorrectNumberOfArguments(
+          Error(IncorrectNumberOfArguments(
             expected: expected_length,
             got: argument_length,
           ))
         }
         Ok(zipped) -> {
-          use <- try_each(zipped, fn(pair) {
-            let #(a, b) = pair
-            unify(a, b)
-          })
+          use state <- result.try(
+            list.try_fold(zipped, state, fn(state, pair) {
+              let #(argument, parameter) = pair
+              case unify(state, argument, parameter) {
+                Ok(#(state, _)) -> Ok(state)
+                Error(error) -> Error(error)
+              }
+            }),
+          )
 
-          capture_doc(function, before, after, parameter_type, return_type)
+          let type_ =
+            Function(
+              parameters: [parameter_type],
+              return: return_type,
+              field_map: None,
+            )
+          Ok(#(state, Compiled(capture_doc(function, before, after), type_)))
         }
       }
     TypeVariable(_) -> {
-      use return_type <- then(type_variable)
+      let #(state, return_type) = type_variable(state)
 
       let function_type =
         Function(
@@ -1136,9 +1116,15 @@ pub fn function_capture(
           return: return_type,
           field_map: None,
         )
-      use _ <- try(unify(called_type, function_type))
+      use #(state, _) <- result.try(unify(state, called_type, function_type))
 
-      capture_doc(function, before, after, parameter_type, return_type)
+      let type_ =
+        Function(
+          parameters: [parameter_type],
+          return: return_type,
+          field_map: None,
+        )
+      Ok(#(state, Compiled(capture_doc(function, before, after), type_)))
     }
   }
 }
@@ -1147,12 +1133,7 @@ fn capture_doc(
   function: Compiled,
   before: List(Compiled),
   after: List(Compiled),
-  parameter_type: Type,
-  return_type: Type,
-) -> Expression(a) {
-  let type_ =
-    Function(parameters: [parameter_type], return: return_type, field_map: None)
-
+) -> Document {
   [
     doc.break("(", "("),
     before
@@ -1169,12 +1150,6 @@ fn capture_doc(
   |> doc.append(doc.break("", ","))
   |> doc.append(doc.from_string(")"))
   |> doc.group
-  |> Compiled(type_)
-  |> return
-}
-
-fn definition(continue: fn() -> Expression(a)) -> Definition {
-  Definition(continue().compile)
 }
 
 pub fn function(
@@ -1182,14 +1157,16 @@ pub fn function(
   function: FunctionBuilder(a),
   continue: fn(Expression(Constant)) -> Definition,
 ) -> Definition {
-  use <- definition
+  use state <- Definition
 
-  use return_type <- then(type_variable)
+  let #(state, return_type) = type_variable(state)
 
-  use function <- try(function.compile(_, name, return_type, []))
-  use body <- compile_statement(function.body)
+  use #(state, function) <- result.try(
+    function.compile(state, name, return_type, []),
+  )
+  use #(state, body) <- result.try(function.body.compile(state))
 
-  let parameters_are_valid =
+  use _ <- result.try(
     list.try_fold(function.parameters, False, fn(found_labelled, parameter) {
       case parameter.label {
         None if found_labelled ->
@@ -1197,9 +1174,8 @@ pub fn function(
         None -> Ok(False)
         Some(_) -> Ok(True)
       }
-    })
-
-  use _ <- try(pure(parameters_are_valid))
+    }),
+  )
 
   let parameter_list =
     [
@@ -1226,22 +1202,20 @@ pub fn function(
     |> doc.append(doc.from_string("}"))
     |> doc.group
 
-  use return_type <- try(unify(body.type_, return_type))
+  use #(state, return_type) <- result.try(unify(state, body.type_, return_type))
 
-  use #(fields, arity) <- try(
-    pure(
-      list.try_fold(function.parameters, #(dict.new(), 0), fn(pair, parameter) {
-        let #(map, index) = pair
-        case parameter.label {
-          None -> Ok(#(map, index + 1))
-          Some(label) ->
-            case dict.get(map, label) {
-              Error(_) -> Ok(#(dict.insert(map, label, index), index + 1))
-              Ok(_) -> Error(DuplicateLabel(label:))
-            }
-        }
-      }),
-    ),
+  use #(fields, arity) <- result.try(
+    list.try_fold(function.parameters, #(dict.new(), 0), fn(pair, parameter) {
+      let #(map, index) = pair
+      case parameter.label {
+        None -> Ok(#(map, index + 1))
+        Some(label) ->
+          case dict.get(map, label) {
+            Error(_) -> Ok(#(dict.insert(map, label, index), index + 1))
+            Ok(_) -> Error(DuplicateLabel(label:))
+          }
+      }
+    }),
   )
 
   let field_map = FieldMap(arity:, fields:)
@@ -1255,29 +1229,31 @@ pub fn function(
       field_map: Some(field_map),
     )
 
-  let function_name = return(Compiled(doc.from_string(name), type_))
+  let function_name = doc_to_expression(Compiled(doc.from_string(name), type_))
 
-  use rest <- compile_definition(continue(function_name))
+  use #(state, rest) <- result.try(continue(function_name).compile(state))
 
-  [
-    doc.from_string("fn "),
-    doc.from_string(name),
-    parameter_list,
-    doc.from_string(" -> "),
-    doc.from_string(print_type(return_type)),
-    doc.from_string(" "),
-    body_doc,
-    doc.lines(2),
-    rest.document,
-  ]
-  |> doc.concat
-  |> Compiled(type_)
-  |> return
+  Ok(#(
+    state,
+    [
+      doc.from_string("fn "),
+      doc.from_string(name),
+      parameter_list,
+      doc.from_string(" -> "),
+      doc.from_string(print_type(return_type)),
+      doc.from_string(" "),
+      body_doc,
+      doc.lines(2),
+      rest.document,
+    ]
+      |> doc.concat
+      |> Compiled(type_),
+  ))
 }
 
 pub fn empty() -> Definition {
-  use <- definition
-  return(Compiled(doc.empty, type_nil))
+  use state <- Definition
+  Ok(#(state, Compiled(doc.empty, type_nil)))
 }
 
 pub fn constant(
@@ -1285,33 +1261,39 @@ pub fn constant(
   value: Expression(Constant),
   continue: fn(Expression(Constant)) -> Definition,
 ) -> Definition {
-  use <- definition
+  use state <- Definition
 
-  use value <- compile(value)
+  use #(state, value) <- result.try(value.compile(state))
 
-  let constant_name = return(Compiled(doc.from_string(name), value.type_))
+  let constant_name =
+    doc_to_expression(Compiled(doc.from_string(name), value.type_))
 
-  use rest <- compile_definition(continue(constant_name))
+  use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
-  [
-    doc.from_string("const "),
-    doc.from_string(name),
-    doc.from_string(": "),
-    doc.from_string(print_type(value.type_)),
-    doc.from_string(" = "),
-    value.document,
-    doc.lines(2),
-    rest.document,
-  ]
-  |> doc.concat
-  |> Compiled(value.type_)
-  |> return
+  Ok(#(
+    state,
+    [
+      doc.from_string("const "),
+      doc.from_string(name),
+      doc.from_string(": "),
+      doc.from_string(print_type(value.type_)),
+      doc.from_string(" = "),
+      value.document,
+      doc.lines(2),
+      rest.document,
+    ]
+      |> doc.concat
+      |> Compiled(value.type_),
+  ))
 }
 
-pub fn doc_comment(comment: String, continue: fn() -> Definition) -> Definition {
-  use <- definition
+pub fn doc_comment(
+  comment: String,
+  continue: fn() -> Definition,
+) -> Definition {
+  use state <- Definition
 
-  use rest <- compile_definition(continue())
+  use #(state, rest) <- result.try(continue().compile(state))
 
   let comment =
     comment
@@ -1319,14 +1301,16 @@ pub fn doc_comment(comment: String, continue: fn() -> Definition) -> Definition 
     |> list.map(fn(line) { doc.from_string("/// " <> line) })
     |> doc.join(doc.line)
 
-  [
-    comment,
-    doc.line,
-    rest.document,
-  ]
-  |> doc.concat
-  |> Compiled(TypeVariable(0))
-  |> return
+  Ok(#(
+    state,
+    [
+      comment,
+      doc.line,
+      rest.document,
+    ]
+      |> doc.concat
+      |> Compiled(TypeVariable(0)),
+  ))
 }
 
 fn print_type(type_: Type) -> String {
@@ -1401,7 +1385,10 @@ pub opaque type Argument {
   Argument(label: Option(String), value: Expression(Variable))
 }
 
-pub fn argument(label: Option(String), value: Expression(Variable)) -> Argument {
+pub fn argument(
+  label: Option(String),
+  value: Expression(Variable),
+) -> Argument {
   Argument(label, value)
 }
 
@@ -1413,56 +1400,61 @@ pub fn labelled_call(
   function: Expression(a),
   arguments: List(Argument),
 ) -> Expression(Variable) {
-  use function <- compile(function)
-  use arguments <- fold_list(
-    arguments,
-    fn(state) { #(state, []) },
-    fn(arguments, argument) {
-      fn(state) {
-        use #(state, value) <- result.map(argument.value.compile(state))
-        #(state, [CompiledArgument(label: argument.label, value:), ..arguments])
-      }
-    },
+  use state <- Expression
+  use #(state, function) <- result.try(function.compile(state))
+  use #(state, arguments) <- result.try(
+    try_fold_with_state(state, arguments, [], fn(state, arguments, argument) {
+      use #(state, value) <- result.map(argument.value.compile(state))
+      #(state, [CompiledArgument(label: argument.label, value:), ..arguments])
+    }),
   )
   let arguments = list.reverse(arguments)
 
-  use called_type <- then(unwrap_type(function.type_))
+  let #(state, called_type) = unwrap_type(state, function.type_)
 
   let field_map = case called_type {
     Custom(..) | Tuple(..) | TypeVariable(..) -> None
     Function(field_map:, ..) -> field_map
   }
 
-  use argument_types <- try(case field_map {
+  use argument_types <- result.try(case field_map {
     None -> assert_no_labelled_arguments(arguments)
-    Some(field_map) -> pure(reorder(arguments, field_map))
+    Some(field_map) -> reorder(arguments, field_map)
   })
 
-  use called_type <- then(unwrap_type(function.type_))
+  let #(state, called_type) = unwrap_type(state, function.type_)
 
   case called_type {
-    Custom(..) | Tuple(..) -> error(InvalidCall(called_type))
+    Custom(..) | Tuple(..) -> Error(InvalidCall(called_type))
     Function(parameters:, return: return_type, field_map: _) ->
       case list.strict_zip(argument_types, parameters) {
         Error(Nil) -> {
           let expected_length = list.length(parameters)
           let argument_length = list.length(argument_types)
-          error(IncorrectNumberOfArguments(
+          Error(IncorrectNumberOfArguments(
             expected: expected_length,
             got: argument_length,
           ))
         }
         Ok(zipped) -> {
-          use <- try_each(zipped, fn(pair) {
-            let #(arg, param) = pair
-            unify(arg, with: param)
-          })
+          use state <- result.try(
+            list.try_fold(zipped, state, fn(state, pair) {
+              let #(arg, param) = pair
+              case unify(state, arg, with: param) {
+                Ok(#(state, _)) -> Ok(state)
+                Error(error) -> Error(error)
+              }
+            }),
+          )
 
-          labelled_call_doc(arguments, function, return_type)
+          Ok(#(
+            state,
+            Compiled(labelled_call_doc(arguments, function), return_type),
+          ))
         }
       }
     TypeVariable(_) -> {
-      use return_type <- then(type_variable)
+      let #(state, return_type) = type_variable(state)
 
       let function_type =
         Function(
@@ -1470,9 +1462,9 @@ pub fn labelled_call(
           return: return_type,
           field_map: None,
         )
-      use _ <- try(unify(called_type, function_type))
+      use #(state, _) <- result.try(unify(state, called_type, function_type))
 
-      labelled_call_doc(arguments, function, return_type)
+      Ok(#(state, Compiled(labelled_call_doc(arguments, function), return_type)))
     }
   }
 }
@@ -1480,8 +1472,7 @@ pub fn labelled_call(
 fn labelled_call_doc(
   arguments: List(CompiledArgument),
   function: Compiled,
-  return_type: Type,
-) -> Expression(a) {
+) -> Document {
   [
     doc.break("(", "("),
     arguments
@@ -1504,8 +1495,6 @@ fn labelled_call_doc(
   |> doc.append(doc.break("", ","))
   |> doc.append(doc.from_string(")"))
   |> doc.group
-  |> Compiled(return_type)
-  |> return
 }
 
 fn reorder(
@@ -1596,7 +1585,7 @@ fn split_arguments(
 
 fn assert_no_labelled_arguments(
   arguments: List(CompiledArgument),
-) -> fn(State) -> Result(#(State, List(Type)), Error) {
+) -> Result(List(Type), Error) {
   arguments
   |> list.try_map(fn(argument) {
     case argument.label {
@@ -1604,7 +1593,6 @@ fn assert_no_labelled_arguments(
       Some(label) -> Error(UnexpectedLabelledArgument(label:))
     }
   })
-  |> pure
 }
 
 pub opaque type CustomType {
@@ -1625,27 +1613,30 @@ pub type Field {
   Field(label: Option(String), type_: Type)
 }
 
-pub fn custom_type(name: String, continue: fn(Type) -> CustomType) -> Definition {
-  use <- definition
+pub fn custom_type(
+  name: String,
+  continue: fn(Type) -> CustomType,
+) -> Definition {
+  use state <- Definition
 
-  use module <- then(fn(state) { #(state, state.module) })
-
-  let type_ = Custom(module:, name:, generics: [])
+  let type_ = Custom(module: state.module, name:, generics: [])
 
   let custom_type = continue(type_)
-  use custom_type <- try(custom_type.compile(_, type_))
-  use rest <- compile_definition(custom_type.rest)
+  use #(state, custom_type) <- result.try(custom_type.compile(state, type_))
+  use #(state, rest) <- result.try(custom_type.rest.compile(state))
 
   use <- bool.lazy_guard(custom_type.constructors == [], fn() {
-    [
-      doc.from_string("type "),
-      doc.from_string(name),
-      doc.lines(2),
-      rest.document,
-    ]
-    |> doc.concat
-    |> Compiled(type_)
-    |> return
+    Ok(#(
+      state,
+      [
+        doc.from_string("type "),
+        doc.from_string(name),
+        doc.lines(2),
+        rest.document,
+      ]
+        |> doc.concat
+        |> Compiled(type_),
+    ))
   })
 
   let constructors =
@@ -1686,19 +1677,21 @@ pub fn custom_type(name: String, continue: fn(Type) -> CustomType) -> Definition
     |> doc.group
     |> doc.nest(indent)
 
-  [
-    doc.from_string("type "),
-    doc.from_string(name),
-    doc.from_string(" {"),
-    constructors,
-    doc.line,
-    doc.from_string("}"),
-    doc.lines(2),
-    rest.document,
-  ]
-  |> doc.concat
-  |> Compiled(type_)
-  |> return
+  Ok(#(
+    state,
+    [
+      doc.from_string("type "),
+      doc.from_string(name),
+      doc.from_string(" {"),
+      constructors,
+      doc.line,
+      doc.from_string("}"),
+      doc.lines(2),
+      rest.document,
+    ]
+      |> doc.concat
+      |> Compiled(type_),
+  ))
 }
 
 pub fn constructor(
@@ -1735,7 +1728,7 @@ pub fn constructor(
 
   let expression = Compiled(doc.from_string(name), constructor_type)
 
-  let custom_type = continue(return(expression))
+  let custom_type = continue(doc_to_expression(expression))
   use #(state, info) <- result.try(custom_type.compile(state, type_))
 
   Ok(#(
