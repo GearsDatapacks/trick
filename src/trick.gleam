@@ -32,6 +32,7 @@ pub type Error {
   TupleIndexOutOfBounds(length: Int, index: Int)
   InvalidTupleAccess(type_: Type)
   InvalidCall(type_: Type)
+  InvalidListPrepend(type_: Type)
   IncorrectNumberOfArguments(expected: Int, got: Int)
   UnlabelledParameterAfterLabelledParameter
   UnexpectedLabelledArgument(label: String)
@@ -919,6 +920,47 @@ fn list_at(list: List(a), index: Int, length: Int) -> Result(a, Int) {
     _, _ if index < 0 -> Error(0)
     [_, ..list], _ -> list_at(list, index - 1, length + 1)
   }
+}
+
+pub fn prepend(
+  list: Expression(a),
+  elements: List(Expression(a)),
+) -> Expression(a) {
+  use state <- Expression
+  use #(state, list) <- result.try(list.compile(state))
+  use element_type <- result.try(case unwrap_type(state, list.type_) {
+    Custom(module: "gleam", name: "List", generics: [type_]) -> Ok(type_)
+    Custom(..) as type_
+    | Generic(..) as type_
+    | Unbound(..) as type_
+    | Tuple(..) as type_
+    | Function(..) as type_ -> Error(InvalidListPrepend(type_))
+  })
+  use #(state, elements) <- result.try(compile_values(state, elements))
+  use state <- result.try(
+    list.try_fold(elements, state, fn(state, element) {
+      case unify(state, element.type_, with: element_type) {
+        Ok(#(state, _)) -> Ok(state)
+        Error(error) -> Error(error)
+      }
+    }),
+  )
+
+  Ok(#(
+    state,
+    elements
+      |> list.map(fn(element) { element.document })
+      |> doc.join(doc.break(", ", ","))
+      |> doc.append(
+        doc.concat([doc.break(", ", ","), doc.from_string(".."), list.document]),
+      )
+      |> doc.prepend(doc.break("[", "["))
+      |> doc.nest(indent)
+      |> doc.append(doc.soft_break)
+      |> doc.append(doc.from_string("]"))
+      |> doc.group
+      |> Compiled(list.type_),
+  ))
 }
 
 pub type Unlabelled

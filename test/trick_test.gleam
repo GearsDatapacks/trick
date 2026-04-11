@@ -1333,3 +1333,40 @@ pub fn generic_cannot_be_two_types_at_once() {
     |> trick.to_string
   assert error == trick.TypeMismatch(expected: type_int, got: type_string)
 }
+
+pub fn list_prepend_test() {
+  trick.list([trick.int(2), trick.int(3)])
+  |> trick.prepend([trick.int(0), trick.int(1)])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("list_prepend")
+}
+
+pub fn long_list_prepend_test() {
+  trick.list([trick.string("Some string")])
+  |> trick.prepend([
+    trick.string("This is a very long string"),
+    trick.string("This string is also long so the list will wrap"),
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("long_list_prepend")
+}
+
+pub fn list_prepend_not_a_list_test() {
+  let assert Error(error) =
+    trick.int(2)
+    |> trick.prepend([trick.int(0), trick.int(1)])
+    |> trick.expression_to_string
+
+  assert error == trick.InvalidListPrepend(type_int)
+}
+
+pub fn list_prepend_wrong_type_test() {
+  let assert Error(error) =
+    trick.list([trick.int(2), trick.int(3)])
+    |> trick.prepend([trick.float(0.0), trick.float(1.0)])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+}

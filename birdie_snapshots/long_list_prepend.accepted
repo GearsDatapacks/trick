@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: long_list_prepend
+file: ./test/trick_test.gleam
+test_name: long_list_prepend_test
+---
+[
+  "This is a very long string",
+  "This string is also long so the list will wrap",
+  ..["Some string"]
+]

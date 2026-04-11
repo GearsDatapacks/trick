@@ -1,0 +1,7 @@
+---
+version: 1.5.4
+title: list_prepend
+file: ./test/trick_test.gleam
+test_name: list_prepend_test
+---
+[0, 1, ..[2, 3]]
