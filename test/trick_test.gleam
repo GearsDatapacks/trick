@@ -1370,3 +1370,133 @@ pub fn list_prepend_wrong_type_test() {
 
   assert error == trick.TypeMismatch(expected: type_int, got: type_float)
 }
+
+pub fn generic_function_called_multiple_times_with_different_types_test() {
+  {
+    use double <- trick.function("pair", {
+      use value <- trick.parameter("value", trick.Generic(0))
+      trick.function_body(trick.expression(trick.tuple([value, value])))
+    })
+
+    use _ <- trick.function(
+      "main",
+      trick.function_body({
+        use <- trick.discard(
+          trick.expression(trick.call(double, [trick.int(1)])),
+        )
+        trick.expression(trick.call(double, [trick.string("Hello")]))
+      }),
+    )
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("generic_function_called_multiple_times_with_different_types")
+}
+
+pub fn generic_function_called_with_incompatible_types_test() {
+  let assert Error(error) =
+    {
+      use compare <- trick.function("compare", {
+        use first <- trick.parameter("first", trick.Generic(0))
+        use second <- trick.parameter("second", trick.Generic(0))
+        trick.function_body(trick.expression(trick.equal(first, second)))
+      })
+
+      use _ <- trick.function(
+        "main",
+        trick.function_body(
+          trick.expression(
+            trick.call(compare, [trick.int(1), trick.string("1")]),
+          ),
+        ),
+      )
+
+      trick.empty()
+    }
+    |> trick.to_string
+
+  assert error == trick.TypeMismatch(expected: type_int, got: type_string)
+}
+
+pub fn generic_function_with_unrelated_generics_test() {
+  {
+    use pair <- trick.function("pair", {
+      use first <- trick.parameter("first", trick.Generic(0))
+      use second <- trick.parameter("second", trick.Generic(1))
+      trick.function_body(trick.expression(trick.tuple([first, second])))
+    })
+
+    use _ <- trick.function(
+      "main",
+      trick.function_body({
+        trick.expression(trick.call(pair, [trick.int(1), trick.float(2.0)]))
+      }),
+    )
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("generic_function_with_unrelated_generics")
+}
+
+pub fn generic_returning_function_called_multiple_times_test() {
+  {
+    use anything <- trick.function("anything", {
+      trick.function_body(trick.expression(trick.todo_(None)))
+    })
+
+    use _ <- trick.function(
+      "main",
+      trick.function_body({
+        use <- trick.discard(
+          trick.expression(trick.add(trick.call(anything, []), trick.int(1))),
+        )
+        trick.expression(trick.or(trick.call(anything, []), trick.bool(False)))
+      }),
+    )
+
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("generic_returning_function_called_multiple_times")
+}
+
+pub fn generic_parameter_cannot_be_used_as_any_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function("generic", {
+        use param <- trick.parameter("param", trick.Generic(0))
+        trick.function_body(trick.expression(trick.add(param, trick.int(1))))
+      })
+
+      trick.empty()
+    }
+    |> trick.to_string
+
+  assert error == trick.TypeMismatch(expected: type_int, got: trick.Generic(0))
+}
+
+pub fn generic_constant_used_multiple_times_test() {
+  {
+    use empty <- trick.constant("empty", trick.list([]))
+    use _ <- trick.function(
+      "main",
+      trick.function_body({
+        use <- trick.discard(
+          trick.expression(trick.prepend(empty, [trick.int(1), trick.int(2)])),
+        )
+        trick.expression(
+          trick.prepend(empty, [trick.float(1.0), trick.float(2.0)]),
+        )
+      }),
+    )
+    trick.empty()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("generic_constant_used_multiple_times")
+}

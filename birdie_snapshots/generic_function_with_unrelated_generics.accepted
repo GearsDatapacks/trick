@@ -1,0 +1,15 @@
+---
+version: 1.5.4
+title: generic_function_with_unrelated_generics
+file: ./test/trick_test.gleam
+test_name: generic_function_with_unrelated_generics_test
+---
+fn pair(first: a, second: b) -> #(a, b) {
+  #(first, second)
+}
+
+fn main() -> #(Int, Float) {
+  pair(1, 2.0)
+}
+
+

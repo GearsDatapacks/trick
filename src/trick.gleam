@@ -342,6 +342,62 @@ fn do_instantiate(
   }
 }
 
+fn generalise(state: State, type_: Type) -> #(State, Type) {
+  let #(state, type_, _) = do_generalise(state, type_, dict.new())
+  #(state, type_)
+}
+
+fn do_generalise(
+  state: State,
+  type_: Type,
+  generalised: Dict(Int, Type),
+) -> #(State, Type, Dict(Int, Type)) {
+  case unwrap_type(state, type_) {
+    Custom(module:, name:, generics:) -> {
+      let #(#(state, generalised), generics) =
+        list.map_fold(generics, #(state, generalised), fn(acc, generic) {
+          let #(state, generalised) = acc
+          let #(state, generic, generalised) =
+            do_generalise(state, generic, generalised)
+          #(#(state, generalised), generic)
+        })
+      #(state, Custom(module:, name:, generics:), generalised)
+    }
+    Generic(..) -> #(state, type_, generalised)
+    Unbound(id:) -> {
+      case dict.get(generalised, id) {
+        Ok(type_) -> #(state, type_, generalised)
+        Error(_) -> {
+          let #(state, generic) = next_generic(state)
+          #(state, generic, dict.insert(generalised, id, generic))
+        }
+      }
+    }
+    Tuple(elements:) -> {
+      let #(#(state, generalised), elements) =
+        list.map_fold(elements, #(state, generalised), fn(acc, element) {
+          let #(state, generalised) = acc
+          let #(state, element, generalised) =
+            do_generalise(state, element, generalised)
+          #(#(state, generalised), element)
+        })
+      #(state, Tuple(elements:), generalised)
+    }
+    Function(parameters:, return:, field_map:) -> {
+      let #(#(state, generalised), parameters) =
+        list.map_fold(parameters, #(state, generalised), fn(acc, parameter) {
+          let #(state, generalised) = acc
+          let #(state, parameter, generalised) =
+            do_generalise(state, parameter, generalised)
+          #(#(state, generalised), parameter)
+        })
+      let #(state, return, generalised) =
+        do_generalise(state, return, generalised)
+      #(state, Function(parameters:, return:, field_map:), generalised)
+    }
+  }
+}
+
 fn instantiated(doc: Document, type_: Type) -> Expression(_) {
   use state <- Expression
   let #(state, type_) = instantiate(state, type_)
@@ -1351,6 +1407,8 @@ pub fn function(
 
   use #(state, return_type) <- result.try(unify(state, body.type_, return_type))
 
+  let #(state, return_type) = generalise(state, return_type)
+
   use #(fields, arity) <- result.try(
     list.try_fold(function.parameters, #(dict.new(), 0), fn(pair, parameter) {
       let #(map, index) = pair
@@ -1412,7 +1470,9 @@ pub fn constant(
 
   use #(state, value) <- result.try(value.compile(state))
 
-  let constant_name = instantiated(doc.from_string(name), value.type_)
+  let #(state, type_) = generalise(state, value.type_)
+
+  let constant_name = instantiated(doc.from_string(name), type_)
 
   use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
@@ -1422,14 +1482,14 @@ pub fn constant(
       doc.from_string("const "),
       doc.from_string(name),
       doc.from_string(": "),
-      doc.from_string(print_type(state, value.type_)),
+      doc.from_string(print_type(state, type_)),
       doc.from_string(" = "),
       value.document,
       doc.lines(2),
       rest.document,
     ]
       |> doc.concat
-      |> Compiled(value.type_),
+      |> Compiled(type_),
   ))
 }
 

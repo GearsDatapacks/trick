@@ -1,0 +1,16 @@
+---
+version: 1.5.4
+title: generic_returning_function_called_multiple_times
+file: ./test/trick_test.gleam
+test_name: generic_returning_function_called_multiple_times_test
+---
+fn anything() -> c {
+  todo
+}
+
+fn main() -> Bool {
+  anything() + 1
+  anything() || False
+}
+
+

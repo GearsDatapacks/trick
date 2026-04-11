@@ -1,10 +1,10 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: recursive_function
 file: ./test/trick_test.gleam
 test_name: recursive_function_test
 ---
-fn add(a a: Int, b b: Int) -> a {
+fn add(a a: Int, b b: Int) -> b {
   add(a, b)
 }
 
