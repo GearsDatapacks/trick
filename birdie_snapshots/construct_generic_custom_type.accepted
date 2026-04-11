@@ -4,12 +4,12 @@ title: construct_generic_custom_type
 file: ./test/trick_test.gleam
 test_name: construct_generic_custom_type_test
 ---
-type Option(value) {
+pub type Option(value) {
   Some(value)
   None
 }
 
-fn main() -> Option(String) {
+pub fn main() -> Option(String) {
   Some(1)
   Some("Hello")
 }

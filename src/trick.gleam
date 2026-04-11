@@ -84,6 +84,25 @@ const type_bool: ConcreteType = Custom("gleam", "Bool", [])
 
 const type_nil: ConcreteType = Custom("gleam", "Nil", [])
 
+pub type Publicity {
+  Public
+  Internal
+  Private
+}
+
+fn publicity_to_doc(publicity: Publicity) -> Document {
+  case publicity {
+    Public -> doc.from_string("pub ")
+    Internal ->
+      doc.concat([
+        doc.from_string("@internal"),
+        doc.line,
+        doc.from_string("pub "),
+      ])
+    Private -> doc.empty
+  }
+}
+
 fn type_list(element: ConcreteType) -> ConcreteType {
   Custom("gleam", "List", [element])
 }
@@ -1447,6 +1466,7 @@ fn capture_doc(
 
 pub fn function(
   name: String,
+  publicity: Publicity,
   function: FunctionBuilder(a),
   continue: fn(Expression(Constant)) -> Definition,
 ) -> Definition {
@@ -1531,6 +1551,7 @@ pub fn function(
   Ok(#(
     state,
     [
+      publicity_to_doc(publicity),
       doc.from_string("fn "),
       doc.from_string(name),
       parameter_list,
@@ -1552,6 +1573,7 @@ pub fn empty() -> Definition {
 
 pub fn constant(
   name: String,
+  publicity: Publicity,
   value: Expression(Constant),
   continue: fn(Expression(Constant)) -> Definition,
 ) -> Definition {
@@ -1568,6 +1590,7 @@ pub fn constant(
   Ok(#(
     state,
     [
+      publicity_to_doc(publicity),
       doc.from_string("const "),
       doc.from_string(name),
       doc.from_string(": "),
@@ -1928,7 +1951,11 @@ pub type Field {
   Field(label: Option(String), type_: Type)
 }
 
-pub fn custom_type(name: String, continue: fn() -> CustomType) -> Definition {
+pub fn custom_type(
+  name: String,
+  publicity: Publicity,
+  continue: fn() -> CustomType,
+) -> Definition {
   use state <- Definition
 
   let info = CustomTypeHead(name, parameters: [])
@@ -2021,6 +2048,7 @@ pub fn custom_type(name: String, continue: fn() -> CustomType) -> Definition {
   Ok(#(
     state,
     [
+      publicity_to_doc(publicity),
       doc.from_string("type "),
       doc.from_string(custom_type.name),
       parameters,

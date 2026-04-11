@@ -1,5 +1,5 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: multiple_constants
 file: ./test/trick_test.gleam
 test_name: multiple_constants_test
@@ -8,6 +8,6 @@ const pi: Float = 3.14
 
 const e: Float = 2.71
 
-const mathematical_constants: #(Float, Float) = #(e, pi)
+pub const mathematical_constants: #(Float, Float) = #(e, pi)
 
 

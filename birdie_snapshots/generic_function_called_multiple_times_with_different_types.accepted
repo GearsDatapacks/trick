@@ -4,11 +4,11 @@ title: generic_function_called_multiple_times_with_different_types
 file: ./test/trick_test.gleam
 test_name: generic_function_called_multiple_times_with_different_types_test
 ---
-fn pair(value: a) -> #(a, a) {
+pub fn pair(value: a) -> #(a, a) {
   #(value, value)
 }
 
-fn main() -> #(String, String) {
+pub fn main() -> #(String, String) {
   pair(1)
   pair("Hello")
 }

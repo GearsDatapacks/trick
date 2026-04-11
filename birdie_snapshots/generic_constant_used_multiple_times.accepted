@@ -4,9 +4,9 @@ title: generic_constant_used_multiple_times
 file: ./test/trick_test.gleam
 test_name: generic_constant_used_multiple_times_test
 ---
-const empty: List(b) = []
+pub const empty: List(b) = []
 
-fn main() -> List(Float) {
+pub fn main() -> List(Float) {
   [1, 2, ..empty]
   [1.0, 2.0, ..empty]
 }

@@ -656,6 +656,7 @@ pub fn incorrect_argument_type_capture_test() {
 pub fn function_test() {
   trick.function(
     "add",
+    trick.Private,
     {
       use a <- trick.parameter("a", trick.int_type())
       use b <- trick.parameter("b", trick.int_type())
@@ -672,7 +673,7 @@ pub fn function_test() {
 
 pub fn multiple_functions_test() {
   {
-    use add <- trick.function("add", {
+    use add <- trick.function("add", trick.Private, {
       use a <- trick.parameter("a", trick.int_type())
       use b <- trick.parameter("b", trick.int_type())
       trick.add(a, b)
@@ -682,6 +683,7 @@ pub fn multiple_functions_test() {
 
     use _main <- trick.function(
       "main",
+      trick.Public,
       trick.function_body({
         use <- trick.discard(
           trick.expression(trick.echo_(
@@ -703,7 +705,7 @@ pub fn multiple_functions_test() {
 pub fn multiple_functions_type_check_correctly_test() {
   let assert Error(error) =
     {
-      use add <- trick.function("add", {
+      use add <- trick.function("add", trick.Private, {
         use a <- trick.parameter("a", trick.int_type())
         use b <- trick.parameter("b", trick.int_type())
         trick.add(a, b)
@@ -714,7 +716,7 @@ pub fn multiple_functions_type_check_correctly_test() {
       trick.call(add, [trick.int(1), trick.int(2), trick.int(3)])
       |> trick.expression
       |> trick.function_body
-      |> trick.function("main", _, fn(_main) { trick.empty() })
+      |> trick.function("main", trick.Public, _, fn(_main) { trick.empty() })
     }
     |> trick.to_string
 
@@ -723,7 +725,7 @@ pub fn multiple_functions_type_check_correctly_test() {
 
 pub fn labelled_parameter_test() {
   {
-    use add <- trick.function("add", {
+    use add <- trick.function("add", trick.Private, {
       use a <- trick.labelled_parameter("a", "a", trick.int_type())
       use b <- trick.labelled_parameter("b", "b", trick.int_type())
       trick.add(a, b)
@@ -734,7 +736,7 @@ pub fn labelled_parameter_test() {
     trick.call(add, [trick.int(1), trick.int(2)])
     |> trick.expression
     |> trick.function_body
-    |> trick.function("main", _, fn(_main) { trick.empty() })
+    |> trick.function("main", trick.Public, _, fn(_main) { trick.empty() })
   }
   |> trick.to_string
   |> unwrap
@@ -745,6 +747,7 @@ pub fn unlabelled_after_labelled_test() {
   let assert Error(error) =
     trick.function(
       "add",
+      trick.Private,
       {
         use a <- trick.labelled_parameter("a", "a", trick.int_type())
         use b <- trick.labelled_parameter("b", "b", trick.int_type())
@@ -766,6 +769,7 @@ pub fn recursive_function_test() {
   {
     trick.function(
       "add",
+      trick.Private,
       {
         use a <- trick.labelled_parameter("a", "a", trick.int_type())
         use b <- trick.labelled_parameter("b", "b", trick.int_type())
@@ -786,6 +790,7 @@ pub fn recursive_function_has_correct_type_test() {
     {
       trick.function(
         "add",
+        trick.Private,
         {
           use a <- trick.labelled_parameter("a", "a", trick.int_type())
           use b <- trick.labelled_parameter("b", "b", trick.int_type())
@@ -806,6 +811,7 @@ pub fn recursive_function_has_correct_type2_test() {
     {
       trick.function(
         "add",
+        trick.Private,
         {
           use a <- trick.labelled_parameter("a", "a", trick.int_type())
           use b <- trick.labelled_parameter("b", "b", trick.int_type())
@@ -828,7 +834,7 @@ pub fn recursive_function_has_correct_type2_test() {
 }
 
 pub fn constant_test() {
-  trick.constant("pi", trick.float(3.14), fn(_) { trick.empty() })
+  trick.constant("pi", trick.Public, trick.float(3.14), fn(_) { trick.empty() })
   |> trick.to_string
   |> unwrap
   |> birdie.snap("constant")
@@ -836,10 +842,11 @@ pub fn constant_test() {
 
 pub fn multiple_constants_test() {
   {
-    use pi <- trick.constant("pi", trick.float(3.14))
-    use e <- trick.constant("e", trick.float(2.71))
+    use pi <- trick.constant("pi", trick.Private, trick.float(3.14))
+    use e <- trick.constant("e", trick.Private, trick.float(2.71))
     use _mathematical_constants <- trick.constant(
       "mathematical_constants",
+      trick.Public,
       trick.tuple([e, pi]),
     )
     trick.empty()
@@ -851,8 +858,8 @@ pub fn multiple_constants_test() {
 
 pub fn constant_used_in_function_test() {
   {
-    use pi <- trick.constant("pi", trick.float(3.14))
-    use _area <- trick.function("area", {
+    use pi <- trick.constant("pi", trick.Private, trick.float(3.14))
+    use _area <- trick.function("area", trick.Internal, {
       use radius <- trick.parameter("radius", trick.float_type())
       pi
       |> trick.multiply_float(radius)
@@ -869,8 +876,8 @@ pub fn constant_used_in_function_test() {
 
 pub fn constant_referencing_function_test() {
   {
-    use pi <- trick.constant("pi", trick.float(3.14))
-    use area <- trick.function("area", {
+    use pi <- trick.constant("pi", trick.Private, trick.float(3.14))
+    use area <- trick.function("area", trick.Private, {
       use radius <- trick.parameter("radius", trick.float_type())
       pi
       |> trick.multiply_float(radius)
@@ -878,7 +885,7 @@ pub fn constant_referencing_function_test() {
       |> trick.expression
       |> trick.function_body
     })
-    use _area2 <- trick.constant("area2", area)
+    use _area2 <- trick.constant("area2", trick.Private, area)
     trick.empty()
   }
   |> trick.to_string
@@ -889,8 +896,8 @@ pub fn constant_referencing_function_test() {
 pub fn constant_type_checks_correctly_test() {
   let assert Error(error) =
     {
-      use pi <- trick.constant("pi", trick.float(3.14))
-      use _area <- trick.function("area", {
+      use pi <- trick.constant("pi", trick.Private, trick.float(3.14))
+      use _area <- trick.function("area", trick.Private, {
         use radius <- trick.parameter("radius", trick.int_type())
         pi
         |> trick.multiply(radius)
@@ -908,6 +915,7 @@ pub fn constant_type_checks_correctly_test() {
 pub fn type_annotation_printing_test() {
   trick.function(
     "main",
+    trick.Public,
     {
       use tuple <- trick.parameter(
         "tuple",
@@ -994,7 +1002,7 @@ pub fn tuple_types_are_unified_test() {
 
 pub fn labelled_call_test() {
   {
-    use wibble <- trick.function("wibble", {
+    use wibble <- trick.function("wibble", trick.Private, {
       use left <- trick.labelled_parameter("left", "left", trick.int_type())
       use right <- trick.labelled_parameter("right", "right", trick.int_type())
       use condition <- trick.labelled_parameter(
@@ -1011,6 +1019,7 @@ pub fn labelled_call_test() {
 
     use _main <- trick.function(
       "main",
+      trick.Public,
       trick.function_body(
         trick.expression(
           trick.labelled_call(wibble, [
@@ -1032,7 +1041,7 @@ pub fn labelled_call_test() {
 pub fn labels_affect_ordering_test() {
   let assert Error(error) =
     trick.to_string({
-      use wibble <- trick.function("wibble", {
+      use wibble <- trick.function("wibble", trick.Private, {
         use first <- trick.labelled_parameter(
           "first",
           "first",
@@ -1056,6 +1065,7 @@ pub fn labels_affect_ordering_test() {
 
       use _main <- trick.function(
         "main",
+        trick.Public,
         trick.function_body(
           trick.expression(
             trick.labelled_call(wibble, [
@@ -1076,7 +1086,7 @@ pub fn labels_affect_ordering_test() {
 pub fn incorrect_arity_labelled_call_test() {
   let assert Error(error) =
     trick.to_string({
-      use wibble <- trick.function("wibble", {
+      use wibble <- trick.function("wibble", trick.Private, {
         use first <- trick.labelled_parameter(
           "first",
           "first",
@@ -1100,6 +1110,7 @@ pub fn incorrect_arity_labelled_call_test() {
 
       use _main <- trick.function(
         "main",
+        trick.Public,
         trick.function_body(
           trick.expression(
             trick.labelled_call(wibble, [
@@ -1119,7 +1130,7 @@ pub fn incorrect_arity_labelled_call_test() {
 pub fn duplicate_label_in_call_test() {
   let assert Error(error) =
     trick.to_string({
-      use wibble <- trick.function("wibble", {
+      use wibble <- trick.function("wibble", trick.Private, {
         use first <- trick.labelled_parameter(
           "first",
           "first",
@@ -1143,6 +1154,7 @@ pub fn duplicate_label_in_call_test() {
 
       use _main <- trick.function(
         "main",
+        trick.Public,
         trick.function_body(
           trick.expression(
             trick.labelled_call(wibble, [
@@ -1165,6 +1177,7 @@ pub fn duplicate_label_in_definition_test() {
     trick.to_string(
       trick.function(
         "wibble",
+        trick.Private,
         {
           use first <- trick.labelled_parameter(
             "first",
@@ -1214,7 +1227,7 @@ pub fn doc_comment_test() {
       "The ratio of a circle's radius
 to its circumference",
     )
-    use _pi <- trick.constant("pi", trick.float(3.14))
+    use _pi <- trick.constant("pi", trick.Internal, trick.float(3.14))
     trick.empty()
   }
   |> trick.to_string
@@ -1224,7 +1237,7 @@ to its circumference",
 
 pub fn custom_type_test() {
   {
-    use <- trick.custom_type("SomeType")
+    use <- trick.custom_type("SomeType", trick.Public)
     use _type <- trick.custom_type_constructors
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use _other_constructor <- trick.constructor("OtherConstructor", [
@@ -1242,7 +1255,7 @@ pub fn custom_type_test() {
 
 pub fn custom_type_used_in_function_test() {
   {
-    use <- trick.custom_type("SomeType")
+    use <- trick.custom_type("SomeType", trick.Public)
     use type_ <- trick.custom_type_constructors
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use other_constructor <- trick.constructor("OtherConstructor", [
@@ -1251,7 +1264,7 @@ pub fn custom_type_used_in_function_test() {
     ])
     use <- trick.end_custom_type
 
-    use _main <- trick.function("main", {
+    use _main <- trick.function("main", trick.Public, {
       use value <- trick.parameter("value", type_)
       trick.function_body({
         use value2 <- trick.variable(
@@ -1271,7 +1284,7 @@ pub fn custom_type_used_in_function_test() {
 
 pub fn custom_type_with_labels_test() {
   {
-    use <- trick.custom_type("SomeType")
+    use <- trick.custom_type("SomeType", trick.Public)
     use type_ <- trick.custom_type_constructors
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use other_constructor <- trick.constructor("OtherConstructor", [
@@ -1280,7 +1293,7 @@ pub fn custom_type_with_labels_test() {
     ])
     use <- trick.end_custom_type
 
-    use _main <- trick.function("main", {
+    use _main <- trick.function("main", trick.Public, {
       use value <- trick.parameter("value", type_)
       trick.function_body({
         use value2 <- trick.variable(
@@ -1303,7 +1316,7 @@ pub fn custom_type_with_labels_test() {
 
 pub fn external_custom_type_test() {
   {
-    use <- trick.custom_type("External")
+    use <- trick.custom_type("External", trick.Private)
     use _type <- trick.custom_type_constructors
     use <- trick.end_custom_type
     trick.empty()
@@ -1315,7 +1328,7 @@ pub fn external_custom_type_test() {
 
 pub fn external_type_with_parameters_test() {
   {
-    use <- trick.custom_type("External")
+    use <- trick.custom_type("External", trick.Internal)
     use _param <- trick.type_parameter("something")
     use _param <- trick.type_parameter("other_thing")
     use _type <- trick.custom_type_constructors
@@ -1329,7 +1342,7 @@ pub fn external_type_with_parameters_test() {
 
 pub fn custom_type_with_parameters_test() {
   {
-    use <- trick.custom_type("Option")
+    use <- trick.custom_type("Option", trick.Public)
     use value <- trick.type_parameter("value")
     use _type <- trick.custom_type_constructors
     use _some <- trick.constructor("Some", [
@@ -1346,7 +1359,7 @@ pub fn custom_type_with_parameters_test() {
 
 pub fn construct_generic_custom_type_test() {
   {
-    use <- trick.custom_type("Option")
+    use <- trick.custom_type("Option", trick.Public)
     use value <- trick.type_parameter("value")
     use _type <- trick.custom_type_constructors
     use some <- trick.constructor("Some", [
@@ -1356,6 +1369,7 @@ pub fn construct_generic_custom_type_test() {
     use <- trick.end_custom_type
     use _main <- trick.function(
       "main",
+      trick.Public,
       trick.function_body({
         use <- trick.discard(trick.expression(trick.call(some, [trick.int(1)])))
         trick.expression(trick.call(some, [trick.string("Hello")]))
@@ -1371,7 +1385,7 @@ pub fn construct_generic_custom_type_test() {
 pub fn generic_cannot_be_two_types_at_once() {
   let assert Error(error) =
     {
-      use <- trick.custom_type("Double")
+      use <- trick.custom_type("Double", trick.Public)
       use value <- trick.type_parameter("value")
       use _ <- trick.custom_type_constructors
       use double <- trick.constructor("Double", [
@@ -1381,6 +1395,7 @@ pub fn generic_cannot_be_two_types_at_once() {
       use <- trick.end_custom_type
       use _ <- trick.function(
         "main",
+        trick.Public,
         trick.function_body(
           trick.expression(
             trick.call(double, [trick.int(1), trick.string("2")]),
@@ -1432,13 +1447,14 @@ pub fn list_prepend_wrong_type_test() {
 
 pub fn generic_function_called_multiple_times_with_different_types_test() {
   {
-    use double <- trick.function("pair", {
+    use double <- trick.function("pair", trick.Public, {
       use value <- trick.parameter("value", trick.generic("a"))
       trick.function_body(trick.expression(trick.tuple([value, value])))
     })
 
     use _ <- trick.function(
       "main",
+      trick.Public,
       trick.function_body({
         use <- trick.discard(
           trick.expression(trick.call(double, [trick.int(1)])),
@@ -1457,7 +1473,7 @@ pub fn generic_function_called_multiple_times_with_different_types_test() {
 pub fn generic_function_called_with_incompatible_types_test() {
   let assert Error(error) =
     {
-      use compare <- trick.function("compare", {
+      use compare <- trick.function("compare", trick.Public, {
         use first <- trick.parameter("first", trick.generic("a"))
         use second <- trick.parameter("second", trick.generic("a"))
         trick.function_body(trick.expression(trick.equal(first, second)))
@@ -1465,6 +1481,7 @@ pub fn generic_function_called_with_incompatible_types_test() {
 
       use _ <- trick.function(
         "main",
+        trick.Public,
         trick.function_body(
           trick.expression(
             trick.call(compare, [trick.int(1), trick.string("1")]),
@@ -1481,7 +1498,7 @@ pub fn generic_function_called_with_incompatible_types_test() {
 
 pub fn generic_function_with_unrelated_generics_test() {
   {
-    use pair <- trick.function("pair", {
+    use pair <- trick.function("pair", trick.Public, {
       use first <- trick.parameter("first", trick.generic("a"))
       use second <- trick.parameter("second", trick.generic("b"))
       trick.function_body(trick.expression(trick.tuple([first, second])))
@@ -1489,6 +1506,7 @@ pub fn generic_function_with_unrelated_generics_test() {
 
     use _ <- trick.function(
       "main",
+      trick.Public,
       trick.function_body({
         trick.expression(trick.call(pair, [trick.int(1), trick.float(2.0)]))
       }),
@@ -1503,12 +1521,13 @@ pub fn generic_function_with_unrelated_generics_test() {
 
 pub fn generic_returning_function_called_multiple_times_test() {
   {
-    use anything <- trick.function("anything", {
+    use anything <- trick.function("anything", trick.Public, {
       trick.function_body(trick.expression(trick.todo_(None)))
     })
 
     use _ <- trick.function(
       "main",
+      trick.Public,
       trick.function_body({
         use <- trick.discard(
           trick.expression(trick.add(trick.call(anything, []), trick.int(1))),
@@ -1527,7 +1546,7 @@ pub fn generic_returning_function_called_multiple_times_test() {
 pub fn generic_parameter_cannot_be_used_as_any_test() {
   let assert Error(error) =
     {
-      use _ <- trick.function("generic", {
+      use _ <- trick.function("generic", trick.Public, {
         use param <- trick.parameter("param", trick.generic("a"))
         trick.function_body(trick.expression(trick.add(param, trick.int(1))))
       })
@@ -1541,9 +1560,10 @@ pub fn generic_parameter_cannot_be_used_as_any_test() {
 
 pub fn generic_constant_used_multiple_times_test() {
   {
-    use empty <- trick.constant("empty", trick.list([]))
+    use empty <- trick.constant("empty", trick.Public, trick.list([]))
     use _ <- trick.function(
       "main",
+      trick.Public,
       trick.function_body({
         use <- trick.discard(
           trick.expression(trick.prepend(empty, [trick.int(1), trick.int(2)])),

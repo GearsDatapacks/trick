@@ -1,11 +1,12 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: doc_comment
 file: ./test/trick_test.gleam
 test_name: doc_comment_test
 ---
 /// The ratio of a circle's radius
 /// to its circumference
-const pi: Float = 3.14
+@internal
+pub const pi: Float = 3.14
 
 

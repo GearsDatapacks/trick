@@ -4,7 +4,7 @@ title: custom_type_with_parameters
 file: ./test/trick_test.gleam
 test_name: custom_type_with_parameters_test
 ---
-type Option(value) {
+pub type Option(value) {
   Some(value)
   None
 }

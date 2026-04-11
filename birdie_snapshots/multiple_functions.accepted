@@ -1,5 +1,5 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: multiple_functions
 file: ./test/trick_test.gleam
 test_name: multiple_functions_test
@@ -8,7 +8,7 @@ fn add(a: Int, b: Int) -> Int {
   a + b
 }
 
-fn main() -> Nil {
+pub fn main() -> Nil {
   echo add(1, 2)
   Nil
 }

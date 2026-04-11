@@ -4,7 +4,7 @@ title: type_annotation_printing
 file: ./test/trick_test.gleam
 test_name: type_annotation_printing_test
 ---
-fn main(
+pub fn main(
   tuple: #(Int, Float, String),
   function: fn(Int, Int) -> Float,
   generic: wibble,

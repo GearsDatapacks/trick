@@ -1,15 +1,15 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: custom_type_used_in_function
 file: ./test/trick_test.gleam
 test_name: custom_type_used_in_function_test
 ---
-type SomeType {
+pub type SomeType {
   ConstructorName
   OtherConstructor(Int, wibble: Float)
 }
 
-fn main(value: SomeType) -> #(SomeType, SomeType) {
+pub fn main(value: SomeType) -> #(SomeType, SomeType) {
   let value2 = OtherConstructor(10, 3.14)
   #(value, value2)
 }
