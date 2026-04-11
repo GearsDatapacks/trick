@@ -28,11 +28,11 @@ pub opaque type Definition {
 }
 
 pub type Error {
-  TypeMismatch(expected: Type, got: Type)
+  TypeMismatch(expected: ConcreteType, got: ConcreteType)
   TupleIndexOutOfBounds(length: Int, index: Int)
-  InvalidTupleAccess(type_: Type)
-  InvalidCall(type_: Type)
-  InvalidListPrepend(type_: Type)
+  InvalidTupleAccess(type_: ConcreteType)
+  InvalidCall(type_: ConcreteType)
+  InvalidListPrepend(type_: ConcreteType)
   IncorrectNumberOfArguments(expected: Int, got: Int)
   UnlabelledParameterAfterLabelledParameter
   UnexpectedLabelledArgument(label: String)
@@ -41,15 +41,23 @@ pub type Error {
 }
 
 type Compiled {
-  Compiled(document: Document, type_: Type)
+  Compiled(document: Document, type_: ConcreteType)
 }
 
-pub type Type {
-  Custom(module: String, name: String, generics: List(Type))
+pub opaque type Type {
+  Type(compile: fn(State) -> #(State, ConcreteType))
+}
+
+pub type ConcreteType {
+  Custom(module: String, name: String, generics: List(ConcreteType))
   Generic(id: Int)
   Unbound(id: Int)
-  Tuple(elements: List(Type))
-  Function(parameters: List(Type), return: Type, field_map: Option(FieldMap))
+  Tuple(elements: List(ConcreteType))
+  Function(
+    parameters: List(ConcreteType),
+    return: ConcreteType,
+    field_map: Option(FieldMap),
+  )
 }
 
 pub type FieldMap {
@@ -58,42 +66,43 @@ pub type FieldMap {
 
 type State {
   State(
-    resolved_variables: Dict(Int, Type),
+    resolved_variables: Dict(Int, ConcreteType),
     type_variable_names: Dict(Int, String),
+    generic_variable_names: Dict(String, ConcreteType),
     type_variable_id: Int,
     module: String,
   )
 }
 
-const type_int: Type = Custom("gleam", "Int", [])
+const type_int: ConcreteType = Custom("gleam", "Int", [])
 
-const type_float: Type = Custom("gleam", "Float", [])
+const type_float: ConcreteType = Custom("gleam", "Float", [])
 
-const type_string: Type = Custom("gleam", "String", [])
+const type_string: ConcreteType = Custom("gleam", "String", [])
 
-const type_bool: Type = Custom("gleam", "Bool", [])
+const type_bool: ConcreteType = Custom("gleam", "Bool", [])
 
-const type_nil: Type = Custom("gleam", "Nil", [])
+const type_nil: ConcreteType = Custom("gleam", "Nil", [])
 
-fn type_list(element: Type) -> Type {
+fn type_list(element: ConcreteType) -> ConcreteType {
   Custom("gleam", "List", [element])
 }
 
-fn next_unbound(state: State) -> #(State, Type) {
+fn next_unbound(state: State) -> #(State, ConcreteType) {
   let id = state.type_variable_id
   let type_ = Unbound(id:)
   let state = State(..state, type_variable_id: id + 1)
   #(state, type_)
 }
 
-fn next_generic(state: State) -> #(State, Type) {
+fn next_generic(state: State) -> #(State, ConcreteType) {
   let id = state.type_variable_id
   let type_ = Generic(id:)
   let state = State(..state, type_variable_id: id + 1)
   #(state, type_)
 }
 
-fn named_unbound(state: State, name: String) -> #(State, Type) {
+fn named_unbound(state: State, name: String) -> #(State, ConcreteType) {
   let id = state.type_variable_id
   let type_ = Unbound(id:)
   let state =
@@ -105,7 +114,7 @@ fn named_unbound(state: State, name: String) -> #(State, Type) {
   #(state, type_)
 }
 
-fn named_generic(state: State, name: String) -> #(State, Type) {
+fn named_generic(state: State, name: String) -> #(State, ConcreteType) {
   let id = state.type_variable_id
   let type_ = Generic(id:)
   let state =
@@ -160,7 +169,11 @@ fn try_fold_with_state(
   }
 }
 
-fn unify(state: State, a: Type, with b: Type) -> Result(#(State, Type), Error) {
+fn unify(
+  state: State,
+  a: ConcreteType,
+  with b: ConcreteType,
+) -> Result(#(State, ConcreteType), Error) {
   use <- bool.guard(a == b, Ok(#(state, a)))
 
   let mismatch = TypeMismatch(expected: b, got: a)
@@ -250,9 +263,9 @@ type Order {
 fn unify_unbound_type(
   state: State,
   id: Int,
-  type_: Type,
+  type_: ConcreteType,
   order: Order,
-) -> Result(#(State, Type), Error) {
+) -> Result(#(State, ConcreteType), Error) {
   case dict.get(state.resolved_variables, id) {
     Ok(resolved_type) if order == VariableFirst ->
       unify(state, resolved_type, type_)
@@ -268,7 +281,7 @@ fn unify_unbound_type(
   }
 }
 
-fn unwrap_type(state: State, type_: Type) -> Type {
+fn unwrap_type(state: State, type_: ConcreteType) -> ConcreteType {
   let unwrapped = case type_ {
     Custom(..) | Tuple(..) | Function(..) | Generic(..) -> type_
     Unbound(id:) ->
@@ -280,16 +293,16 @@ fn unwrap_type(state: State, type_: Type) -> Type {
   unwrapped
 }
 
-fn instantiate(state: State, type_: Type) -> #(State, Type) {
+fn instantiate(state: State, type_: ConcreteType) -> #(State, ConcreteType) {
   let #(state, type_, _) = do_instantiate(state, type_, dict.new())
   #(state, type_)
 }
 
 fn do_instantiate(
   state: State,
-  type_: Type,
-  instantiated: Dict(Int, Type),
-) -> #(State, Type, Dict(Int, Type)) {
+  type_: ConcreteType,
+  instantiated: Dict(Int, ConcreteType),
+) -> #(State, ConcreteType, Dict(Int, ConcreteType)) {
   case type_ {
     Custom(module:, name:, generics:) -> {
       let #(#(state, instantiated), generics) =
@@ -342,16 +355,16 @@ fn do_instantiate(
   }
 }
 
-fn generalise(state: State, type_: Type) -> #(State, Type) {
+fn generalise(state: State, type_: ConcreteType) -> #(State, ConcreteType) {
   let #(state, type_, _) = do_generalise(state, type_, dict.new())
   #(state, type_)
 }
 
 fn do_generalise(
   state: State,
-  type_: Type,
-  generalised: Dict(Int, Type),
-) -> #(State, Type, Dict(Int, Type)) {
+  type_: ConcreteType,
+  generalised: Dict(Int, ConcreteType),
+) -> #(State, ConcreteType, Dict(Int, ConcreteType)) {
   case unwrap_type(state, type_) {
     Custom(module:, name:, generics:) -> {
       let #(#(state, generalised), generics) =
@@ -398,10 +411,82 @@ fn do_generalise(
   }
 }
 
-fn instantiated(doc: Document, type_: Type) -> Expression(_) {
+fn instantiated(doc: Document, type_: ConcreteType) -> Expression(_) {
   use state <- Expression
   let #(state, type_) = instantiate(state, type_)
   Ok(#(state, Compiled(doc, type_)))
+}
+
+pub fn int_type() -> Type {
+  concrete(type_int)
+}
+
+pub fn float_type() -> Type {
+  concrete(type_float)
+}
+
+pub fn string_type() -> Type {
+  concrete(type_string)
+}
+
+pub fn bool_type() -> Type {
+  concrete(type_bool)
+}
+
+pub fn nil_type() -> Type {
+  concrete(type_nil)
+}
+
+pub fn bit_array_type() -> Type {
+  concrete(Custom("gleam", "BitArray", []))
+}
+
+pub fn utf_codepoint_type() -> Type {
+  concrete(Custom("gleam", "UtfCodepoint", []))
+}
+
+pub fn list_type(element_type: Type) -> Type {
+  use state <- Type
+  let #(state, element_type) = element_type.compile(state)
+  #(state, type_list(element_type))
+}
+
+pub fn tuple_type(elements: List(Type)) -> Type {
+  use state <- Type
+  let #(state, elements) =
+    list.map_fold(elements, state, fn(state, element) { element.compile(state) })
+  #(state, Tuple(elements:))
+}
+
+pub fn function_type(parameters: List(Type), return: Type) -> Type {
+  use state <- Type
+  let #(state, parameters) =
+    list.map_fold(parameters, state, fn(state, parameter) {
+      parameter.compile(state)
+    })
+  let #(state, return) = return.compile(state)
+  #(state, Function(parameters:, return:, field_map: None))
+}
+
+pub fn generic(name: String) -> Type {
+  use state <- Type
+  case dict.get(state.generic_variable_names, name) {
+    Ok(type_) -> #(state, type_)
+    Error(_) -> {
+      let #(state, type_) = named_generic(state, name)
+      #(
+        State(
+          ..state,
+          generic_variable_names: dict.insert(
+            state.generic_variable_names,
+            name,
+            type_,
+          ),
+        ),
+        type_,
+      )
+    }
+  }
 }
 
 const width: Int = 80
@@ -428,6 +513,7 @@ fn new_state() -> State {
   State(
     resolved_variables: dict.new(),
     type_variable_names: dict.new(),
+    generic_variable_names: dict.new(),
     type_variable_id: 0,
     module: "module",
   )
@@ -528,8 +614,8 @@ fn binary_operator(
   left: Expression(_),
   operator: String,
   right: Expression(_),
-  operand_type: Type,
-  result_type: Type,
+  operand_type: ConcreteType,
+  result_type: ConcreteType,
 ) -> Expression(_) {
   use state <- Expression
   use #(state, left) <- result.try(left.compile(state))
@@ -694,7 +780,7 @@ pub fn greater_than_or_equal_float(
 fn unary_operator(
   operator: String,
   value: Expression(_),
-  type_: Type,
+  type_: ConcreteType,
 ) -> Expression(_) {
   use state <- Expression
   use #(state, value) <- result.try(value.compile(state))
@@ -1025,7 +1111,7 @@ pub type Labelled
 
 pub opaque type FunctionBuilder(labelling) {
   FunctionBuilder(
-    compile: fn(State, String, Type, List(Type)) ->
+    compile: fn(State, String, ConcreteType, List(ConcreteType)) ->
       Result(#(State, FunctionInformation), Error),
   )
 }
@@ -1035,7 +1121,7 @@ type FunctionInformation {
 }
 
 type Parameter {
-  Parameter(name: String, label: Option(String), type_: Type)
+  Parameter(name: String, label: Option(String), type_: ConcreteType)
 }
 
 pub fn anonymous(
@@ -1114,6 +1200,8 @@ pub fn parameter(
 ) -> FunctionBuilder(a) {
   use state, function_name, function_type, parameters <- FunctionBuilder
 
+  let #(state, type_) = type_.compile(state)
+
   let expression = Compiled(doc.from_string(name), type_)
   let function = continue(doc_to_expression(expression))
 
@@ -1141,6 +1229,8 @@ pub fn labelled_parameter(
   continue: fn(Expression(_)) -> FunctionBuilder(a),
 ) -> FunctionBuilder(Labelled) {
   use state, function_name, function_type, parameters <- FunctionBuilder
+
+  let #(state, type_) = type_.compile(state)
 
   let expression = Compiled(doc.from_string(name), type_)
   let function = continue(doc_to_expression(expression))
@@ -1516,7 +1606,7 @@ pub fn doc_comment(
   ))
 }
 
-fn print_type(state: State, type_: Type) -> String {
+fn print_type(state: State, type_: ConcreteType) -> String {
   case unwrap_type(state, type_) {
     Custom(module: _, name:, generics:) ->
       case generics {
@@ -1707,7 +1797,7 @@ fn labelled_call_doc(
 fn reorder(
   arguments: List(CompiledArgument),
   field_map: FieldMap,
-) -> Result(List(Type), Error) {
+) -> Result(List(ConcreteType), Error) {
   // TODO: Handle incorrect arity and duplicate labels
   let argument_count = list.length(arguments)
   use <- bool.guard(
@@ -1730,11 +1820,11 @@ fn reorder(
 }
 
 fn reorder_arguments(
-  unlabelled_fields: List(Type),
-  labelled_fields: Dict(Int, Type),
+  unlabelled_fields: List(ConcreteType),
+  labelled_fields: Dict(Int, ConcreteType),
   index: Int,
-  out: List(Type),
-) -> List(Type) {
+  out: List(ConcreteType),
+) -> List(ConcreteType) {
   case dict.get(labelled_fields, index), unlabelled_fields {
     Error(_), [] -> list.reverse(out)
     Ok(value), _ ->
@@ -1750,10 +1840,10 @@ fn reorder_arguments(
 fn split_arguments(
   arguments: List(CompiledArgument),
   field_map: FieldMap,
-  labelled: Dict(Int, Type),
-  unlabelled: List(Type),
+  labelled: Dict(Int, ConcreteType),
+  unlabelled: List(ConcreteType),
   seen_labels: Set(String),
-) -> Result(#(List(Type), Dict(Int, Type)), Error) {
+) -> Result(#(List(ConcreteType), Dict(Int, ConcreteType)), Error) {
   case arguments {
     [] -> Ok(#(list.reverse(unlabelled), labelled))
     [first, ..rest] ->
@@ -1792,7 +1882,7 @@ fn split_arguments(
 
 fn assert_no_labelled_arguments(
   arguments: List(CompiledArgument),
-) -> Result(List(Type), Error) {
+) -> Result(List(ConcreteType), Error) {
   arguments
   |> list.try_map(fn(argument) {
     case argument.label {
@@ -1811,7 +1901,7 @@ pub opaque type CustomType {
 
 pub opaque type TypeConstructors {
   TypeConstructors(
-    compile: fn(State, Type) ->
+    compile: fn(State, ConcreteType) ->
       Result(#(State, List(Constructor), Definition), Error),
   )
 }
@@ -1819,15 +1909,15 @@ pub opaque type TypeConstructors {
 type CustomTypeInfo {
   CustomTypeInfo(
     name: String,
-    type_: Type,
+    type_: ConcreteType,
     constructors: List(Constructor),
-    parameters: List(#(String, Type)),
+    parameters: List(#(String, ConcreteType)),
     rest: Definition,
   )
 }
 
 type CustomTypeHead {
-  CustomTypeHead(name: String, parameters: List(#(String, Type)))
+  CustomTypeHead(name: String, parameters: List(#(String, ConcreteType)))
 }
 
 type Constructor {
@@ -1876,39 +1966,53 @@ pub fn custom_type(name: String, continue: fn() -> CustomType) -> Definition {
     ))
   })
 
-  let constructors =
-    list.map(custom_type.constructors, fn(constructor) {
+  let #(state, constructors) =
+    list.map_fold(custom_type.constructors, state, fn(state, constructor) {
       case constructor.fields {
-        [] -> doc.from_string(constructor.name)
-        _ ->
-          [
-            doc.from_string(constructor.name),
+        [] -> #(state, doc.from_string(constructor.name))
+        _ -> {
+          let #(state, fields) =
+            list.map_fold(constructor.fields, state, fn(state, field) {
+              case field.label {
+                None -> {
+                  let #(state, type_) = field.type_.compile(state)
+                  #(state, doc.from_string(print_type(state, type_)))
+                }
+                Some(label) -> {
+                  let #(state, type_) = field.type_.compile(state)
+                  #(
+                    state,
+                    [
+                      doc.from_string(label),
+                      doc.from_string(": "),
+                      doc.from_string(print_type(state, type_)),
+                    ]
+                      |> doc.concat,
+                  )
+                }
+              }
+            })
+          #(
+            state,
             [
-              doc.break("(", "("),
-              doc.join(
-                list.map(constructor.fields, fn(field) {
-                  case field.label {
-                    None -> doc.from_string(print_type(state, field.type_))
-                    Some(label) ->
-                      [
-                        doc.from_string(label),
-                        doc.from_string(": "),
-                        doc.from_string(print_type(state, field.type_)),
-                      ]
-                      |> doc.concat
-                  }
-                }),
-                doc.break(", ", ","),
-              ),
+              doc.from_string(constructor.name),
+              [
+                doc.break("(", "("),
+                doc.join(fields, doc.break(", ", ",")),
+              ]
+                |> doc.concat
+                |> doc.nest(indent),
+              doc.break("", ","),
+              doc.from_string(")"),
             ]
-              |> doc.concat
-              |> doc.nest(indent),
-            doc.break("", ","),
-            doc.from_string(")"),
-          ]
-          |> doc.concat
+              |> doc.concat,
+          )
+        }
       }
     })
+
+  let constructors =
+    constructors
     |> doc.join(doc.line)
     |> doc.prepend(doc.line)
     |> doc.group
@@ -1953,11 +2057,13 @@ pub fn constructor(
   )
 
   let field_map = FieldMap(arity:, fields: field_map_fields)
+  let #(state, parameter_types) =
+    list.map_fold(fields, state, fn(state, field) { field.type_.compile(state) })
   let constructor_type = case fields {
     [] -> type_
     _ ->
       Function(
-        parameters: list.map(fields, fn(field) { field.type_ }),
+        parameters: parameter_types,
         return: type_,
         field_map: Some(field_map),
       )
@@ -1974,6 +2080,10 @@ pub fn constructor(
   Ok(#(state, [Constructor(name:, fields:), ..constructors], rest))
 }
 
+fn concrete(type_: ConcreteType) -> Type {
+  Type(fn(state) { #(state, type_) })
+}
+
 pub fn type_parameter(
   name: String,
   continue: fn(Type) -> CustomType,
@@ -1988,7 +2098,7 @@ pub fn type_parameter(
       parameters: list.append(info.parameters, [#(name, type_)]),
     )
 
-  continue(type_).compile(state, info)
+  continue(concrete(type_)).compile(state, info)
 }
 
 pub fn custom_type_constructors(
@@ -2001,10 +2111,9 @@ pub fn custom_type_constructors(
   let type_ =
     Custom(module: state.module, name: info.name, generics: parameters)
 
-  use #(state, constructors, rest) <- result.try(continue(type_).compile(
-    state,
-    type_,
-  ))
+  use #(state, constructors, rest) <- result.try(
+    continue(concrete(type_)).compile(state, type_),
+  )
 
   Ok(#(
     state,
