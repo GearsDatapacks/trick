@@ -24,7 +24,7 @@ pub opaque type Statement {
 }
 
 pub opaque type Definition {
-  Definition(compile: fn(State) -> Result(#(State, Compiled), Error))
+  Definition(compile: fn(State) -> Result(#(State, Document), Error))
 }
 
 pub type Error {
@@ -419,7 +419,7 @@ pub fn expression_to_string(
 
 pub fn to_string(definition: Definition) -> Result(String, Error) {
   case definition.compile(new_state()) {
-    Ok(#(_state, expression)) -> Ok(doc.to_string(expression.document, width))
+    Ok(#(_state, definition)) -> Ok(doc.to_string(definition, width))
     Error(error) -> Error(error)
   }
 }
@@ -1449,16 +1449,15 @@ pub fn function(
       doc.from_string(" "),
       body_doc,
       doc.lines(2),
-      rest.document,
+      rest,
     ]
-      |> doc.concat
-      |> Compiled(type_),
+      |> doc.concat,
   ))
 }
 
 pub fn empty() -> Definition {
   use state <- Definition
-  Ok(#(state, Compiled(doc.empty, type_nil)))
+  Ok(#(state, doc.empty))
 }
 
 pub fn constant(
@@ -1486,10 +1485,9 @@ pub fn constant(
       doc.from_string(" = "),
       value.document,
       doc.lines(2),
-      rest.document,
+      rest,
     ]
-      |> doc.concat
-      |> Compiled(type_),
+      |> doc.concat,
   ))
 }
 
@@ -1512,10 +1510,9 @@ pub fn doc_comment(
     [
       comment,
       doc.line,
-      rest.document,
+      rest,
     ]
-      |> doc.concat
-      |> Compiled(Unbound(0)),
+      |> doc.concat,
   ))
 }
 
@@ -1873,10 +1870,9 @@ pub fn custom_type(name: String, continue: fn() -> CustomType) -> Definition {
         doc.from_string(custom_type.name),
         parameters,
         doc.lines(2),
-        rest.document,
+        rest,
       ]
-        |> doc.concat
-        |> Compiled(custom_type.type_),
+        |> doc.concat,
     ))
   })
 
@@ -1929,10 +1925,9 @@ pub fn custom_type(name: String, continue: fn() -> CustomType) -> Definition {
       doc.line,
       doc.from_string("}"),
       doc.lines(2),
-      rest.document,
+      rest,
     ]
-      |> doc.concat
-      |> Compiled(custom_type.type_),
+      |> doc.concat,
   ))
 }
 
