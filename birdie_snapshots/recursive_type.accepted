@@ -1,0 +1,12 @@
+---
+version: 1.5.4
+title: recursive_type
+file: ./test/trick_test.gleam
+test_name: recursive_type_test
+---
+pub type List(element) {
+  Empty
+  NonEmpty(head: element, tail: List(element))
+}
+
+

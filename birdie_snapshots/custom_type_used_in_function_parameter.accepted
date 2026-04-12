@@ -1,0 +1,13 @@
+---
+version: 1.5.4
+title: custom_type_used_in_function_parameter
+file: ./test/trick_test.gleam
+test_name: custom_type_used_in_function_parameter_test
+---
+type SomeType
+
+pub fn thing(wibble: SomeType) -> Nil {
+  Nil
+}
+
+

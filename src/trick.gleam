@@ -1,3 +1,174 @@
+//// Code generated using `trick` is built up by combining expressions and
+//// statements into a module.
+//// 
+//// The `trick` API is designed to make it as hard as possible to make mistakes
+//// in your generation.
+//// 
+//// A `trick` code generator will look something like this:
+//// 
+//// ```gleam
+//// use pi <- trick.constant("pi", trick.Private, trick.float(3.14))
+//// use circle_area <- trick.function("circle_area", trick.Public, {
+////   use radius <- trick.parameter("radius", trick.float_type())
+////   trick.function_body({
+////     use radius_squared <- trick.variable(
+////       "radius_squared",
+////       trick.multiply_float(radius, radius),
+////     )
+////     trick.expression(trick.multiply_float(radius_squared), pi)
+////   })
+//// })
+//// trick.end_module()
+//// ```
+//// 
+//// The above code, when passed to [`to_string`](#to_string), will produce the
+//// following code:
+//// 
+//// ```gleam
+//// const pi = 3.14
+//// 
+//// pub fn circle_area(radius: Float) -> Float {
+////   let radius_squared = radius *. radius
+////   radius_squared *. pi
+//// }
+//// ```
+//// 
+//// The called functions more of less mimic the structure of the resulting code,
+//// with the exception for a few boilerplate functions needed to convert between
+//// types to appease the Gleam type system.
+//// 
+//// Expression generation is pretty intuitive and straightforward, but some of
+//// the functions for creating custom types and top-level functions can get a
+//// bit complicated due to type system limitations. See the documentation of
+//// individual functions for full explanations of how they are used.
+//// 
+//// ## Table of contents
+//// 
+//// ### Definitions
+//// - [`Module`](#Module)
+////   - [`to_string`](#to_string)
+//// - [`Publicity`](#Publicity)
+//// - [`constant`](#constant)
+//// - [`end_module`](#end_module)
+//// - [`doc_comment`](#doc_comment)
+//// - [`function`](#function)
+////   - [`FunctionBuilder`](#FunctionBuilder)
+////     - [`Unlabelled`](#Unlabelled)
+////     - [`Labelled`](#Labelled)
+////   - [`parameter`](#parameter)
+////   - [`labelled_parameter`](#labelled_parameter)
+////   - [`function_body`](#function_body)
+////   - [`recursive`](#recursive)
+//// - [`custom_type`](#custom_type)
+////   - [`CustomType`](#CustomType)
+////     - [`NoParameters`](#NoParameters)
+////     - [`HasParameters`](#HasParameters)
+////   - [`Field`](#Field)
+////   - [`type_parameter`](#type_parameter)
+////   - [`constructor`](#constructor)
+////   - [`end_custom_type`](#end_custom_type)
+//// ### Statements
+//// - [`Statement`](#Statement)
+//// - [`assert_`](#assert_)
+//// - [`block`](#block)
+//// - [`comment`](#comment)
+//// - [`discard`](#discard)
+//// - [`expression`](#expression)
+//// - [`variable`](#variable)
+//// ### Expressions
+//// - [`Expression`](#Expression)
+////   - [`Constant`](#Constant)
+////   - [`Variable`](#Variable)
+////   - [`expression_to_string`](#expression_to_string)
+//// - [`int`](#int)
+////   - [`int_base2`](#int_base2)
+////   - [`int_base8`](#int_base8)
+////   - [`int_base16`](#int_base16)
+//// - [`float`](#float)
+//// - [`string`](#string)
+//// - [`bool`](#bool)
+//// - [`nil`](#nil)
+//// - [`add`](#add)
+//// - [`add_float`](#add_float)
+//// - [`subtract`](#subtract)
+//// - [`subtract_float`](#subtract_float)
+//// - [`multiply`](#multiply)
+//// - [`multiply_float`](#multiply_float)
+//// - [`divide`](#divide)
+//// - [`divide_float`](#divide_float)
+//// - [`remainder`](#remainder)
+//// - [`concatenate`](#concatenate)
+//// - [`and`](#and)
+//// - [`or`](#or)
+//// - [`equal`](#equal)
+//// - [`not_equal`](#not_equal)
+//// - [`less_than`](#less_than)
+//// - [`less_than_float`](#less_than_float)
+//// - [`less_than_or_equal`](#less_than_or_equal)
+//// - [`less_than_or_equal_float`](#less_than_or_equal_float)
+//// - [`greater_than`](#greater_than)
+//// - [`greater_than_float`](#greater_than_float)
+//// - [`greater_than_or_equal`](#greater_than_or_equal)
+//// - [`greater_than_or_equal_float`](#greater_than_or_equal_float)
+//// - [`negate_int`](#negate_int)
+//// - [`negate_bool`](#negate_bool)
+//// - [`list`](#list)
+//// - [`prepend`](#prepend)
+//// - [`tuple`](#tuple)
+//// - [`tuple_index`](#tuple_index)
+//// - [`panic_`](#panic_)
+//// - [`todo_`](#todo_)
+//// - [`echo_`](#echo_)
+//// - [`anonymous`](#anonymous)
+//// - [`call`](#call)
+////   - [`Argument`](#Argument)
+////   - [`function_capture`](#function_capture)
+////   - [`labelled_call`](#labelled_call)
+//// ### Types
+//// - [`Type`](#Type)
+//// - [`ConcreteType`](#ConcreteType)
+//// - [`FieldMap`](#FieldMap)
+//// - [`Error`](#Error)
+//// - [`int_type`](#int_type)
+//// - [`float_type`](#float_type)
+//// - [`string_type`](#string_type)
+//// - [`bool_type`](#bool_type)
+//// - [`nil_type`](#nil_type)
+//// - [`bit_array_type`](#bit_array_type)
+//// - [`utf_codepoint_type`](#utf_codepoint_type)
+//// - [`list_type`](#list_type)
+//// - [`tuple_type`](#tuple_type)
+//// - [`function_type`](#function_type)
+//// - [`generic`](#generic)
+//// 
+//// ## Best practises
+//// 
+//// To avoid confusion, it's usually best if you **name any variables after their
+//// names in the generated code**. For example, if you're defining a variable,
+//// assign it to a variable of the same name in your generator code:
+//// 
+//// ```gleam
+//// // DO:
+//// use my_variable <- trick.variable("my_variable", trick.int(1))
+//// 
+//// // DON'T:
+//// use number_one <- trick.variable("my_variable", trick.int(1))
+//// ```
+//// 
+//// The same applies to functions, constants, and types (although you may need
+//// to change these a little as your variable will be in the same scope as values).
+//// This helps to avoid cases where you (accidentally or intentionally) shadow
+//// a variable in the generated code, but don't shadow it in your generator code,
+//// allowing out-of-scope values to be referenced.
+//// 
+//// **Break up your code generators into multiple functions**. While the API is
+//// designed to be as ergonomic as possible, due to limitations of the Gleam
+//// type system, generators can get quite verbose. Splitting separate parts of
+//// the code into different functions can make it easier to read and modify.
+//// After all, that's the benefit of having code generators just be plain old
+//// Gleam code.
+//// 
+
 import glam/doc.{type Document}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -5,38 +176,63 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import lazy_const
 import splitter
 
+/// Indicates that an expression is constant and can be assigned to a `const`.
+/// 
 pub type Constant
 
+/// Indicates that an expression includes a runtime computation can cannot be
+/// assigned to a `const`.
+/// 
 pub type Variable
 
+/// A single expression, either marked as [`Constant`](#Constant) or
+/// [`Variable`](#Variable).
+/// 
 pub opaque type Expression(a) {
   Expression(compile: fn(State) -> Result(#(State, Compiled), Error))
 }
 
+/// One or more statements that can be used in a block or function body.
+/// 
 pub opaque type Statement {
   Statement(compile: fn(State) -> Result(#(State, Compiled), Error))
 }
 
-pub opaque type Definition {
-  Definition(compile: fn(State) -> Result(#(State, Document), Error))
+/// A module containing one or more definitions.
+/// 
+pub opaque type Module {
+  Module(compile: fn(State) -> Result(#(State, Document), Error))
 }
 
+/// A type error.
+/// 
 pub type Error {
   TypeMismatch(expected: ConcreteType, got: ConcreteType)
+  /// Attempting to access a non-existent tuple field 
   TupleIndexOutOfBounds(length: Int, index: Int)
+  /// Attempting to perform tuple access on a value which is not a tuple
   InvalidTupleAccess(type_: ConcreteType)
+  /// Attempting to call a value which is not a function
   InvalidCall(type_: ConcreteType)
+  /// Attempting to prepend to a value which is not a list
   InvalidListPrepend(type_: ConcreteType)
+  /// Calling a function with the incorrect number of arguments
   IncorrectNumberOfArguments(expected: Int, got: Int)
-  UnlabelledParameterAfterLabelledParameter
+  /// Attempting to define an unlabelled function parameter after a labelled
+  /// parameter
+  UnlabelledParameterAfterLabelledParameter(name: String)
+  /// Using a label in a call to a function with no labels
   UnexpectedLabelledArgument(label: String)
+  /// Using a label which is not defined in the called function
   UnknownLabel(label: String, available_labels: List(String))
+  /// Attempting to define parameters with duplicate labels
   DuplicateLabel(label: String)
 }
 
@@ -44,10 +240,17 @@ type Compiled {
   Compiled(document: Document, type_: ConcreteType)
 }
 
+/// The type of a value. This is different to [`ConcreteType`](#ConcreteType)
+/// in that it exists before type-checking and does not contain complete
+/// information yet.
+/// 
 pub opaque type Type {
   Type(compile: fn(State) -> #(State, ConcreteType))
 }
 
+/// A known type for an expression. Unlike [`Type`](#Type), this exists after
+/// type-checking and contains the full information about each type.
+/// 
 pub type ConcreteType {
   Custom(module: String, name: String, generics: List(ConcreteType))
   Generic(id: Int)
@@ -60,6 +263,8 @@ pub type ConcreteType {
   )
 }
 
+/// Information about the labels and arity of a function or constructor.
+/// 
 pub type FieldMap {
   FieldMap(arity: Int, fields: Dict(String, Int))
 }
@@ -84,6 +289,8 @@ const type_bool: ConcreteType = Custom("gleam", "Bool", [])
 
 const type_nil: ConcreteType = Custom("gleam", "Nil", [])
 
+/// The publicity of a top-level definition.
+/// 
 pub type Publicity {
   Public
   Internal
@@ -193,13 +400,22 @@ fn unify(
   a: ConcreteType,
   with b: ConcreteType,
 ) -> Result(#(State, ConcreteType), Error) {
+  let a = unwrap_type(state, a)
+  let b = unwrap_type(state, b)
+
   use <- bool.guard(a == b, Ok(#(state, a)))
 
   let mismatch = TypeMismatch(expected: b, got: a)
 
   case a, b {
-    Unbound(id:), other -> unify_unbound_type(state, id, other, VariableFirst)
-    other, Unbound(id:) -> unify_unbound_type(state, id, other, TypeFirst)
+    Unbound(id:), other | other, Unbound(id:) -> {
+      let state =
+        State(
+          ..state,
+          resolved_variables: dict.insert(state.resolved_variables, id, other),
+        )
+      Ok(#(state, other))
+    }
     Custom(module: m1, name: n1, generics: g1),
       Custom(module: m2, name: n2, generics: g2)
       if m1 == m2 && n1 == n2
@@ -274,42 +490,15 @@ fn unify(
   }
 }
 
-type Order {
-  VariableFirst
-  TypeFirst
-}
-
-fn unify_unbound_type(
-  state: State,
-  id: Int,
-  type_: ConcreteType,
-  order: Order,
-) -> Result(#(State, ConcreteType), Error) {
-  case dict.get(state.resolved_variables, id) {
-    Ok(resolved_type) if order == VariableFirst ->
-      unify(state, resolved_type, type_)
-    Ok(resolved_type) -> unify(state, type_, resolved_type)
-    Error(_) -> {
-      let state =
-        State(
-          ..state,
-          resolved_variables: dict.insert(state.resolved_variables, id, type_),
-        )
-      Ok(#(state, type_))
-    }
-  }
-}
-
 fn unwrap_type(state: State, type_: ConcreteType) -> ConcreteType {
-  let unwrapped = case type_ {
+  case type_ {
     Custom(..) | Tuple(..) | Function(..) | Generic(..) -> type_
     Unbound(id:) ->
       case dict.get(state.resolved_variables, id) {
         Error(_) -> type_
-        Ok(type_) -> type_
+        Ok(type_) -> unwrap_type(state, type_)
       }
   }
-  unwrapped
 }
 
 fn instantiate(state: State, type_: ConcreteType) -> #(State, ConcreteType) {
@@ -436,47 +625,67 @@ fn instantiated(doc: Document, type_: ConcreteType) -> Expression(_) {
   Ok(#(state, Compiled(doc, type_)))
 }
 
+/// Returns the `Int` type.
+/// 
 pub fn int_type() -> Type {
   concrete(type_int)
 }
 
+/// Returns the `Float` type.
+/// 
 pub fn float_type() -> Type {
   concrete(type_float)
 }
 
+/// Returns the `String` type.
+/// 
 pub fn string_type() -> Type {
   concrete(type_string)
 }
 
+/// Returns the `Bool` type.
+/// 
 pub fn bool_type() -> Type {
   concrete(type_bool)
 }
 
+/// Returns the `Nil` type.
+/// 
 pub fn nil_type() -> Type {
   concrete(type_nil)
 }
 
+/// Returns the `BitArray` type.
+/// 
 pub fn bit_array_type() -> Type {
   concrete(Custom("gleam", "BitArray", []))
 }
 
+/// Returns the `UtfCodepoint` type.
+/// 
 pub fn utf_codepoint_type() -> Type {
   concrete(Custom("gleam", "UtfCodepoint", []))
 }
 
-pub fn list_type(element_type: Type) -> Type {
+/// Returns a `List` type with the specified element type.
+/// 
+pub fn list_type(of element_type: Type) -> Type {
   use state <- Type
   let #(state, element_type) = element_type.compile(state)
   #(state, type_list(element_type))
 }
 
-pub fn tuple_type(elements: List(Type)) -> Type {
+/// Returns a tuple type containing the specified elements.
+/// 
+pub fn tuple_type(containing elements: List(Type)) -> Type {
   use state <- Type
   let #(state, elements) =
     list.map_fold(elements, state, fn(state, element) { element.compile(state) })
   #(state, Tuple(elements:))
 }
 
+/// Returns a function type with the specified parameters and return type.
+/// 
 pub fn function_type(parameters: List(Type), return: Type) -> Type {
   use state <- Type
   let #(state, parameters) =
@@ -487,6 +696,8 @@ pub fn function_type(parameters: List(Type), return: Type) -> Type {
   #(state, Function(parameters:, return:, field_map: None))
 }
 
+/// Returns a generic type with the given name.
+/// 
 pub fn generic(name: String) -> Type {
   use state <- Type
   case dict.get(state.generic_variable_names, name) {
@@ -512,6 +723,20 @@ const width: Int = 80
 
 const indent: Int = 2
 
+/// Turns an `Expression` into a string of Gleam code.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.int(1) |> trick.add(trick.int(2)) |> trick.expression_to_string
+/// // -> Ok("1 + 2")
+/// ```
+/// 
+/// ```gleam
+/// trick.int(1) |> trick.add(trick.float(2.0)) |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Int, got: Float))
+/// ```
+///
 pub fn expression_to_string(
   expression: Expression(a),
 ) -> Result(String, Error) {
@@ -521,8 +746,21 @@ pub fn expression_to_string(
   }
 }
 
-pub fn to_string(definition: Definition) -> Result(String, Error) {
-  case definition.compile(new_state()) {
+/// Turns a `Module` into a string of Gleam code.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use _pi <- trick.constant("pi", trick.Public, trick.float(3.14))
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// // -> Ok("pub const pi = 3.14")
+/// ```
+///
+pub fn to_string(module: Module) -> Result(String, Error) {
+  case module.compile(new_state()) {
     Ok(#(_state, definition)) -> Ok(doc.to_string(definition, width))
     Error(error) -> Error(error)
   }
@@ -538,6 +776,15 @@ fn new_state() -> State {
   )
 }
 
+/// Generates an `Int`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.int(42) |> trick.expression_to_string
+/// // -> Ok("42")
+/// ```
+/// 
 pub fn int(value: Int) -> Expression(a) {
   value
   |> int.to_string
@@ -546,6 +793,15 @@ pub fn int(value: Int) -> Expression(a) {
   |> doc_to_expression
 }
 
+/// Generates an `Int` using binary syntax.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.int_base2(42) |> trick.expression_to_string
+/// // -> Ok("0b101010")
+/// ```
+/// 
 pub fn int_base2(value: Int) -> Expression(a) {
   value
   |> int.to_base2
@@ -555,6 +811,15 @@ pub fn int_base2(value: Int) -> Expression(a) {
   |> doc_to_expression
 }
 
+/// Generates an `Int` using octal syntax.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.int_base8(42) |> trick.expression_to_string
+/// // -> Ok("0o52")
+/// ```
+/// 
 pub fn int_base8(value: Int) -> Expression(a) {
   value
   |> int.to_base8
@@ -564,6 +829,15 @@ pub fn int_base8(value: Int) -> Expression(a) {
   |> doc_to_expression
 }
 
+/// Generates an `Int` using hexadecimal syntax.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.int_base16(42) |> trick.expression_to_string
+/// // -> Ok("0x2a")
+/// ```
+/// 
 pub fn int_base16(value: Int) -> Expression(a) {
   value
   |> int.to_base16
@@ -573,6 +847,15 @@ pub fn int_base16(value: Int) -> Expression(a) {
   |> doc_to_expression
 }
 
+/// Generates a `Float`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.float(3.14) |> trick.expression_to_string
+/// // -> Ok("3.14")
+/// ```
+/// 
 pub fn float(value: Float) -> Expression(a) {
   value
   |> float.to_string
@@ -581,6 +864,15 @@ pub fn float(value: Float) -> Expression(a) {
   |> doc_to_expression
 }
 
+/// Generates a `String`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.string("Hello, world!") |> trick.expression_to_string
+/// // -> Ok("\"Hello, world!\"")
+/// ```
+/// 
 pub fn string(value: String) -> Expression(a) {
   value
   |> escape_string_literal
@@ -589,6 +881,15 @@ pub fn string(value: String) -> Expression(a) {
   |> doc_to_expression
 }
 
+/// Generates a `Bool`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.bool(True) |> trick.expression_to_string
+/// // -> Ok("True")
+/// ```
+/// 
 pub fn bool(value: Bool) -> Expression(a) {
   value
   |> bool.to_string
@@ -597,6 +898,15 @@ pub fn bool(value: Bool) -> Expression(a) {
   |> doc_to_expression
 }
 
+/// Generates `Nil`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.nil() |> trick.expression_to_string
+/// // -> Ok("Nil")
+/// ```
+/// 
 pub fn nil() -> Expression(a) {
   "Nil"
   |> doc.from_string
@@ -650,10 +960,29 @@ fn binary_operator(
   ))
 }
 
+/// Generates a `+` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.add(trick.int(1), trick.int(2)) |> trick.expression_to_string
+/// // -> Ok("1 + 2")
+/// ```
+/// 
 pub fn add(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "+", right, type_int, type_int)
 }
 
+/// Generates a `+.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.add_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 +. 2.0")
+/// ```
+/// 
 pub fn add_float(
   left: Expression(_),
   right: Expression(_),
@@ -661,20 +990,48 @@ pub fn add_float(
   binary_operator(left, "+.", right, type_float, type_float)
 }
 
+/// Generates a `-` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.subtract(trick.int(1), trick.int(2)) |> trick.expression_to_string
+/// // -> Ok("1 - 2")
+/// ```
+/// 
 pub fn subtract(
-  left: Expression(_),
-  right: Expression(_),
+  from left: Expression(_),
+  subtract right: Expression(_),
 ) -> Expression(Variable) {
   binary_operator(left, "-", right, type_int, type_int)
 }
 
+/// Generates a `-.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.subtract_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 -. 2.0")
+/// ```
+/// 
 pub fn subtract_float(
-  left: Expression(_),
-  right: Expression(_),
+  from left: Expression(_),
+  subtract right: Expression(_),
 ) -> Expression(Variable) {
   binary_operator(left, "-.", right, type_float, type_float)
 }
 
+/// Generates a `*` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.multiply(trick.int(1), trick.int(2)) |> trick.expression_to_string
+/// // -> Ok("1 * 2")
+/// ```
+/// 
 pub fn multiply(
   left: Expression(_),
   right: Expression(_),
@@ -682,6 +1039,16 @@ pub fn multiply(
   binary_operator(left, "*", right, type_int, type_int)
 }
 
+/// Generates a `*.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.multiply_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 *. 2.0")
+/// ```
+/// 
 pub fn multiply_float(
   left: Expression(_),
   right: Expression(_),
@@ -689,20 +1056,48 @@ pub fn multiply_float(
   binary_operator(left, "*.", right, type_float, type_float)
 }
 
+/// Generates a `/` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.divide(trick.int(1), trick.int(2)) |> trick.expression_to_string
+/// // -> Ok("1 / 2")
+/// ```
+/// 
 pub fn divide(
-  left: Expression(_),
-  right: Expression(_),
+  divide left: Expression(_),
+  by right: Expression(_),
 ) -> Expression(Variable) {
   binary_operator(left, "/", right, type_int, type_int)
 }
 
+/// Generates a `/.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.divide_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 /. 2.0")
+/// ```
+/// 
 pub fn divide_float(
-  left: Expression(_),
-  right: Expression(_),
+  divide left: Expression(_),
+  by right: Expression(_),
 ) -> Expression(Variable) {
   binary_operator(left, "/.", right, type_float, type_float)
 }
 
+/// Generates a `%` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.modulo(trick.int(1), trick.int(2)) |> trick.expression_to_string
+/// // -> Ok("1 % 2")
+/// ```
+/// 
 pub fn remainder(
   left: Expression(_),
   right: Expression(_),
@@ -710,18 +1105,69 @@ pub fn remainder(
   binary_operator(left, "%", right, type_int, type_int)
 }
 
+/// Generates a `<>` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.concatenate(trick.string("Hello"), trick.string("world"))
+/// |> trick.expression_to_string
+/// // -> Ok("\"Hello\" <> \"world\"")
+/// ```
+/// 
 pub fn concatenate(left: Expression(a), right: Expression(a)) -> Expression(a) {
   binary_operator(left, "<>", right, type_string, type_string)
 }
 
+/// Generates a `&&` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.and(trick.bool(True), trick.bool(False))
+/// |> trick.expression_to_string
+/// // -> Ok("True && False")
+/// ```
+/// 
 pub fn and(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "&&", right, type_bool, type_bool)
 }
 
+/// Generates a `||` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.or(trick.bool(False), trick.bool(False))
+/// |> trick.expression_to_string
+/// // -> Ok("False || False")
+/// ```
+/// 
 pub fn or(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
   binary_operator(left, "||", right, type_bool, type_bool)
 }
 
+/// Generates a `==` operation. The two values must be of the same type.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.equal(trick.int(1), trick.int(1)) |> trick.expression_to_string
+/// // -> Ok("1 == 1")
+/// ```
+/// 
+/// ```gleam
+/// trick.equal(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 == 2.0")
+/// ```
+/// 
+/// ```gleam
+/// trick.equal(trick.int(1), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Int, got: Float))
+/// ```
+/// 
 pub fn equal(
   left: Expression(_),
   right: Expression(_),
@@ -731,6 +1177,27 @@ pub fn equal(
   binary_operator(left, "==", right, type_, type_bool).compile(state)
 }
 
+/// Generates a `!=` operation. The two values must be of the same type.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.not_equal(trick.int(1), trick.int(1)) |> trick.expression_to_string
+/// // -> Ok("1 != 1")
+/// ```
+/// 
+/// ```gleam
+/// trick.not_equal(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 != 2.0")
+/// ```
+/// 
+/// ```gleam
+/// trick.not_equal(trick.int(1), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Int, got: Float))
+/// ```
+/// 
 pub fn not_equal(
   left: Expression(_),
   right: Expression(_),
@@ -740,6 +1207,15 @@ pub fn not_equal(
   binary_operator(left, "!=", right, type_, type_bool).compile(state)
 }
 
+/// Generates a `<` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.less_than(trick.int(1), trick.int(2)) |> trick.expression_to_string
+/// // -> Ok("1 < 2")
+/// ```
+/// 
 pub fn less_than(
   left: Expression(_),
   right: Expression(_),
@@ -747,6 +1223,16 @@ pub fn less_than(
   binary_operator(left, "<", right, type_int, type_bool)
 }
 
+/// Generates a `<.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.less_than_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 <. 2.0")
+/// ```
+/// 
 pub fn less_than_float(
   left: Expression(_),
   right: Expression(_),
@@ -754,6 +1240,16 @@ pub fn less_than_float(
   binary_operator(left, "<.", right, type_float, type_bool)
 }
 
+/// Generates a `<=` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.less_than_or_equal(trick.int(1), trick.int(2))
+/// |> trick.expression_to_string
+/// // -> Ok("1 <= 2")
+/// ```
+/// 
 pub fn less_than_or_equal(
   left: Expression(_),
   right: Expression(_),
@@ -761,6 +1257,16 @@ pub fn less_than_or_equal(
   binary_operator(left, "<=", right, type_int, type_bool)
 }
 
+/// Generates a `<=.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.less_than_or_equal_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 <=. 2.0")
+/// ```
+/// 
 pub fn less_than_or_equal_float(
   left: Expression(_),
   right: Expression(_),
@@ -768,6 +1274,16 @@ pub fn less_than_or_equal_float(
   binary_operator(left, "<=.", right, type_float, type_bool)
 }
 
+/// Generates a `>` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.greater_than(trick.int(1), trick.int(2))
+/// |> trick.expression_to_string
+/// // -> Ok("1 > 2")
+/// ```
+/// 
 pub fn greater_than(
   left: Expression(_),
   right: Expression(_),
@@ -775,6 +1291,16 @@ pub fn greater_than(
   binary_operator(left, ">", right, type_int, type_bool)
 }
 
+/// Generates a `>.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.greater_than_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 >. 2.0")
+/// ```
+/// 
 pub fn greater_than_float(
   left: Expression(_),
   right: Expression(_),
@@ -782,6 +1308,16 @@ pub fn greater_than_float(
   binary_operator(left, ">.", right, type_float, type_bool)
 }
 
+/// Generates a `>=` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.greater_than_or_equal(trick.int(1), trick.int(2))
+/// |> trick.expression_to_string
+/// // -> Ok("1 >= 2")
+/// ```
+/// 
 pub fn greater_than_or_equal(
   left: Expression(_),
   right: Expression(_),
@@ -789,6 +1325,16 @@ pub fn greater_than_or_equal(
   binary_operator(left, ">=", right, type_int, type_bool)
 }
 
+/// Generates a `>=.` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.greater_than_or_equal_float(trick.float(1.0), trick.float(2.0))
+/// |> trick.expression_to_string
+/// // -> Ok("1.0 >=. 2.0")
+/// ```
+/// 
 pub fn greater_than_or_equal_float(
   left: Expression(_),
   right: Expression(_),
@@ -812,14 +1358,62 @@ fn unary_operator(
   ))
 }
 
+/// Generates a unary `-` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.negate_int(trick.int(1))
+/// |> trick.expression_to_string
+/// // -> Ok("-1")
+/// ```
+/// 
+/// ```gleam
+/// trick.negate_int(trick.float(1.0))
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Int, got: Float))
+/// ```
+/// 
 pub fn negate_int(value: Expression(a)) -> Expression(Variable) {
   unary_operator("-", value, type_int)
 }
 
+/// Generates a unary `!` operation.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.negate_bool(trick.bool(True))
+/// |> trick.expression_to_string
+/// // -> Ok("!True")
+/// ```
+/// 
 pub fn negate_bool(value: Expression(a)) -> Expression(Variable) {
   unary_operator("!", value, type_bool)
 }
 
+/// Generates a list of values. The values must all be of the same type.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.list([trick.int(1), trick.int(2), trick.int(3)])
+/// |> trick.expression_to_string
+/// // -> Ok("[1, 2, 3]")
+/// ```
+/// 
+/// ```gleam
+/// trick.list([trick.float(1.0), trick.float(2.0), trick.float(3.0)])
+/// |> trick.expression_to_string
+/// // -> Ok("[1.0, 2.0, 3.0]")
+/// ```
+/// 
+/// ```gleam
+/// trick.list([trick.int(1), trick.float(2.0), trick.float(3.0)])
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Int, got: Float))
+/// ```
+/// 
 pub fn list(values: List(Expression(a))) -> Expression(a) {
   use state <- Expression
   use #(state, values) <- result.try(compile_values(state, values))
@@ -855,6 +1449,26 @@ fn add_message(document: Document, message: Document) -> Document {
   |> grouped
 }
 
+/// Generates a `panic` expression, with an optional message. If present, the
+/// message must be of type `String`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.panic_(None) |> trick.expression_to_string
+/// // -> Ok("panic")
+/// ```
+/// 
+/// ```gleam
+/// trick.panic_(Some(trick.string("uh oh"))) |> trick.expression_to_string
+/// // -> Ok("panic as \"uh oh\"")
+/// ```
+/// 
+/// ```gleam
+/// trick.panic_(Some(trick.int(42))) |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: String, got: Int))
+/// ```
+/// 
 pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
@@ -871,6 +1485,26 @@ pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
   }
 }
 
+/// Generates a `todo` expression, with an optional message. If present, the
+/// message must be of type `String`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.todo_(None) |> trick.expression_to_string
+/// // -> Ok("todo")
+/// ```
+/// 
+/// ```gleam
+/// trick.todo_(Some(trick.string("uh oh"))) |> trick.expression_to_string
+/// // -> Ok("todo as \"uh oh\"")
+/// ```
+/// 
+/// ```gleam
+/// trick.todo_(Some(trick.int(42))) |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: String, got: Int))
+/// ```
+/// 
 pub fn todo_(message: Option(Expression(a))) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
@@ -887,6 +1521,28 @@ pub fn todo_(message: Option(Expression(a))) -> Expression(Variable) {
   }
 }
 
+/// Generates an `echo` expression, with an optional message. If present, the
+/// message must be of type `String`.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.echo_(trick.int(42), None) |> trick.expression_to_string
+/// // -> Ok("echo 42")
+/// ```
+/// 
+/// ```gleam
+/// trick.echo_(trick.int(42), Some(trick.string("the answer")))
+/// |> trick.expression_to_string
+/// // -> Ok("echo 42 as \"the answer\"")
+/// ```
+/// 
+/// ```gleam
+/// trick.echo_(trick.int(42), Some(trick.int(42)))
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: String, got: Int))
+/// ```
+/// 
 pub fn echo_(
   value: Expression(a),
   message: Option(Expression(a)),
@@ -906,6 +1562,27 @@ pub fn echo_(
   }
 }
 
+/// Declares a variable in the current scope. Calls the continuing function with
+/// an expression representing the variable name.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.block({
+///   use x <- trick.variable("x", trick.int(1))
+///   trick.expression(trick.add(x, trick.int(1)))
+/// })
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// ```gleam
+/// {
+///   let x = 1
+///   x + 1
+/// }
+/// ```
+/// 
 pub fn variable(
   name: String,
   value: Expression(a),
@@ -943,10 +1620,53 @@ fn grouped(documents: List(Document)) -> Document {
   documents |> doc.concat |> doc.nest(indent) |> doc.group
 }
 
+/// Turns an `Expression` into a `Statement` so it can be used in statement
+/// position.
+/// 
+/// By default, an expression statement ends the block and doesn't allow being
+/// followed by another statement. Use [`discard`](#discard) to include a
+/// continuation.
+/// 
 pub fn expression(expression: Expression(a)) -> Statement {
   Statement(expression.compile)
 }
 
+/// Discards a terminating statement and allows continuation.
+/// 
+/// ```gleam
+/// trick.block({
+///   use <- trick.discard(trick.expression(trick.int(1)))
+///   trick.expression(trick.int(2))
+/// })
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   1
+///   2
+/// }
+/// ```
+/// 
+/// ```gleam
+/// trick.block({
+///   use <- trick.discard(trick.assert(trick.bool(True), None))
+///   trick.assert(trick.bool(False), None)
+/// })
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   assert True
+///   assert False
+/// }
+/// ```
+/// 
 pub fn discard(discarded: Statement, continue: fn() -> Statement) -> Statement {
   use state <- Statement
   use #(state, statement) <- result.try(discarded.compile(state))
@@ -961,6 +1681,27 @@ pub fn discard(discarded: Statement, continue: fn() -> Statement) -> Statement {
   ))
 }
 
+/// Generates a comment.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.block({
+///   use <- trick.comment("Pi to 2 decimal places")
+///   trick.expression(trick.float(3.14))
+/// })
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   // Pi to 2 decimal places
+///   3.14
+/// }
+/// ```
+/// 
 pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
   use state <- Statement
   let rest = continue()
@@ -981,6 +1722,38 @@ pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
   ))
 }
 
+/// Generates a block wrapping one or more statements.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.int(1)
+/// |> trick.add(trick.int(2))
+/// |> trick.expression
+/// |> trick.block
+/// |> trick.expression_to_string
+/// // -> Ok("{ 1 + 2 }")
+/// ```
+/// 
+/// ```gleam
+/// trick.block({
+///   use x <- trick.variable("x", trick.int(1))
+///   use y <- trick.variable("y", trick.int(2))
+///   trick.expression(trick.add(x, y))
+/// })
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   let x = 1
+///   let y = 2
+///   x + y
+/// }
+/// ```
+/// 
 pub fn block(inner: Statement) -> Expression(Variable) {
   use state <- Expression
   use #(state, inner) <- result.try(inner.compile(state))
@@ -1000,6 +1773,57 @@ pub fn block(inner: Statement) -> Expression(Variable) {
   ))
 }
 
+/// Generates an `assert` statement with an optional message. The condition must
+/// be of type `Bool`, and the message, if present, must be of type `String`.
+/// 
+/// Like [`expression`](#expression), `assert` by default terminates the block
+/// and doesn't expect a continuation. To place statements after an `assert`,
+/// use [`discard`](#discard).
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.assert_(trick.bool(True), None)
+/// |> trick.block
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   assert True
+/// }
+/// ```
+/// 
+/// ```gleam
+/// trick.assert_(trick.bool(False), Some(trick.string("This will panic")))
+/// |> trick.block
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   assert False as \"This will panic\"
+/// }
+/// ```
+/// 
+/// ```gleam
+/// trick.assert_(trick.int(1), None)
+/// |> trick.block
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Bool, got: Int))
+/// ```
+/// 
+/// ```gleam
+/// trick.assert_(trick.bool(True), Some(trick.bool(True)))
+/// |> trick.block
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: String, got: Bool))
+/// ```
+/// 
 pub fn assert_(
   condition: Expression(a),
   message: Option(Expression(a)),
@@ -1026,6 +1850,17 @@ pub fn assert_(
   }
 }
 
+/// Generates a tuple from the specified values. The values can be of different
+/// types.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.tuple([trick.int(1), trick.float(2.0), trick.string("three")])
+/// |> trick.expression_to_string
+/// // -> Ok("#(1, 2.0, \"three\")")
+/// ```
+/// 
 pub fn tuple(values: List(Expression(a))) -> Expression(a) {
   use state <- Expression
   use #(state, values) <- result.try(compile_values(state, values))
@@ -1048,6 +1883,31 @@ pub fn tuple(values: List(Expression(a))) -> Expression(a) {
   ))
 }
 
+/// Generates a tuple access expression.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.tuple([trick.int(1), trick.float(2.0), trick.string("three")])
+/// |> trick.tuple_index(2)
+/// |> trick.expression_to_string
+/// // -> Ok("#(1, 2.0, \"three\").2")
+/// ```
+/// 
+/// ```gleam
+/// trick.tuple([trick.int(1), trick.float(2.0), trick.string("three")])
+/// |> trick.tuple_index(4)
+/// |> trick.expression_to_string
+/// // -> Error(TupleIndexOutOfBounds(length: 3, index: 4))
+/// ```
+/// 
+/// ```gleam
+/// trick.list([trick.int(1), trick.int(2)])
+/// |> trick.tuple_index(0)
+/// |> trick.expression_to_string
+/// // -> Error(InvalidTupleAccess(type_: List(Int)))
+/// ```
+/// 
 pub fn tuple_index(tuple: Expression(a), index: Int) -> Expression(Variable) {
   use state <- Expression
   use #(state, tuple) <- result.try(tuple.compile(state))
@@ -1083,9 +1943,34 @@ fn list_at(list: List(a), index: Int, length: Int) -> Result(a, Int) {
   }
 }
 
+/// Generates a list prepend expression, prepending one or more items.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.list([trick.int(2), trick.int(3)])
+/// |> trick.prepend([trick.int(0), trick.int(1)])
+/// |> trick.expression_to_string
+/// // -> Ok("[0, 1, ..[2, 3]]")
+/// ```
+/// 
+/// ```gleam
+/// trick.list([trick.int(2), trick.int(3)])
+/// |> trick.prepend([trick.float(0.0), trick.float(1.0)])
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Int, got: Float))
+/// ```
+/// 
+/// ```gleam
+/// trick.int(2)
+/// |> trick.prepend([trick.int(0), trick.int(1)])
+/// |> trick.expression_to_string
+/// // -> InvalidListPrepend(type_: Int)
+/// ```
+/// 
 pub fn prepend(
-  list: Expression(a),
-  elements: List(Expression(a)),
+  to list: Expression(a),
+  prepend elements: List(Expression(a)),
 ) -> Expression(a) {
   use state <- Expression
   use #(state, list) <- result.try(list.compile(state))
@@ -1124,10 +2009,21 @@ pub fn prepend(
   ))
 }
 
+/// Indicates that a function does not have labelled arguments and can be turned
+/// into an anonymous function.
+/// 
 pub type Unlabelled
 
+/// Indicates that a function has one or more labelled arguments can cannot be
+/// turned into an anonymous function as anonymous functions do not support labels.
+/// 
 pub type Labelled
 
+/// Information about a function which can either be turned into a function
+/// definition or an anonymous function.
+/// 
+/// Marked as either [`Labelled`](#Labelled) or [`Unlabelled`](#Unlabelled).
+/// 
 pub opaque type FunctionBuilder(labelling) {
   FunctionBuilder(
     compile: fn(State, String, ConcreteType, List(ConcreteType)) ->
@@ -1143,6 +2039,20 @@ type Parameter {
   Parameter(name: String, label: Option(String), type_: ConcreteType)
 }
 
+/// Generates an anonymous function.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.anonymous({
+///   use a <- trick.parameter("a", trick.int_type())
+///   use b <- trick.parameter("b", trick.int_type())
+///   trick.add(a, b) |> trick.expression |> trick.function_body
+/// })
+/// |> trick.expression_to_string
+/// // -> Ok("fn(a: Int, b: Int) { a + b }")
+/// ```
+/// 
 pub fn anonymous(
   function: FunctionBuilder(Unlabelled),
 ) -> Expression(Variable) {
@@ -1197,6 +2107,29 @@ pub fn anonymous(
   ))
 }
 
+/// Creates a recursive function by passing in the function name to the body.
+/// 
+/// Once a function is declared as recursive, no more parameters can be added.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.function("infinity", trick.Private, {
+///   use parameter <- trick.parameter("parameter", trick.generic("a"))
+///   use infinity <- trick.recursive
+///   trick.call(infinity, parameter)
+/// }, fn(_) { trick.end_module() })
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// fn infinity(parameter: a) -> b {
+///   infinity(parameter)
+/// }
+/// ```
+/// 
 pub fn recursive(
   continue: fn(Expression(Constant)) -> Statement,
 ) -> FunctionBuilder(Labelled) {
@@ -1212,6 +2145,19 @@ pub fn recursive(
   let _ = Ok(#(state, FunctionInformation([], body)))
 }
 
+/// Adds an unlabelled parameter to a function definition.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.anonymous({
+///   use parameter <- trick.parameter("parameter", trick.type_int())
+///   trick.todo_(None) |> trick.expression |> trick.function_body
+/// })
+/// |> trick.expression_to_string
+/// // -> Ok("fn(parameter: Int) { todo }")
+/// ```
+/// 
 pub fn parameter(
   name: String,
   type_: Type,
@@ -1241,6 +2187,26 @@ pub fn parameter(
   ))
 }
 
+/// Adds a labelled parameter to a function definition.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.function("subtract", trick.Public, {
+///   use left <- trick.labelled_parameter("from", "left", trick.type_int())
+///   use right <- trick.labelled_parameter("subtract", "right", trick.type_int())
+///   trick.subtract(left, right) |> trick.expression |> trick.function_body
+/// }, fn(_) { trick.end_module() })
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// pub fn subtract(from left: Int, subtract right: Int) -> Int {
+///   left - right
+/// }
+/// 
 pub fn labelled_parameter(
   label: String,
   name: String,
@@ -1290,12 +2256,64 @@ fn parameter_to_doc(state: State, parameter: Parameter) -> Document {
   }
 }
 
+/// Marks a statement as the body of a function, concluding the definition.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.nil()
+/// |> trick.expression
+/// |> trick.function_body
+/// |> trick.anonymous
+/// |> trick.expression_to_string
+/// // -> Ok("fn() { Nil }")
+/// ```
+/// 
 pub fn function_body(body: Statement) -> FunctionBuilder(Unlabelled) {
   FunctionBuilder(fn(state, _name, _type, _parameters) {
     Ok(#(state, FunctionInformation([], body)))
   })
 }
 
+/// Generates a function call with unlabelled arguments. To use labels in the
+/// call, see [`labelled_call`](#labelled_call).
+/// 
+/// ### Example
+/// 
+/// The following examples assume a function called `add` defined as the following:
+/// 
+/// ```gleam
+/// pub fn add(a: Int, b: Int) -> Int {
+///   a + b
+/// }
+/// ```
+/// 
+/// The definition has been omitted for brevity. See [`function`](#function) for
+/// examples of how to create functions.
+/// 
+/// ```gleam
+/// trick.call(add, [trick.int(1), trick.int(2)]) |> trick.expression_to_string
+/// // -> Ok("add(1, 2)")
+/// ```
+/// 
+/// ```gleam
+/// trick.call(add, [trick.float(1.0), trick.float(2.0)])
+/// |> trick.expression_to_string
+/// // -> Error(TypeMismatch(expected: Int, got: Float))
+/// ```
+/// 
+/// ```gleam
+/// trick.call(add, [trick.int(1), trick.int(2), trick.int(3)])
+/// |> trick.expression_to_string
+/// // -> Error(IncorrectNumberOfArguments(expected: 2, got: 3))
+/// ```
+/// 
+/// ```gleam
+/// trick.call(trick.int(1), [trick.int(2), trick.int(3)])
+/// |> trick.expression_to_string
+/// // -> Error(InvalidCall(type_: int))
+/// ```
+/// 
 pub fn call(
   function: Expression(_),
   arguments: List(Expression(_)),
@@ -1367,6 +2385,52 @@ fn call_doc(arguments: List(Compiled), function: Compiled) -> Document {
   |> doc.group
 }
 
+/// Generates a function capture expression, receiving two lists of arguments.
+/// The function hole goes between the two lists.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use add_5_numbers <- trick.function("add_5_numbers", trick.Private, {
+///     use a <- trick.parameter("a", int_type())
+///     use b <- trick.parameter("b", int_type())
+///     use c <- trick.parameter("c", int_type())
+///     use d <- trick.parameter("d", int_type())
+///     use e <- trick.parameter("e", int_type())
+///     a
+///     |> trick.add(b)
+///     |> trick.add(c)
+///     |> trick.add(d)
+///     |> trick.add(e)
+///     |> trick.expression
+///     |> trick.function_body
+///   })
+/// 
+///   use main <- trick.function("main", trick.Public, trick.function_body(
+///     trick.expression(trick.function_capture(
+///       add_5_numbers,
+///       [trick.int(1), trick.int(2)],
+///       [trick.int(4), trick.int(5)],
+///     ))
+///   ))
+/// 
+///   trick.end_module()
+/// }
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// fn add_5_numbers(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int {
+///   a + b + c + d + e
+/// }
+/// 
+/// pub fn main() -> fn(Int) -> Int {
+///   add_5_numbers(1, 2, _, 4, 5)
+/// }
+/// ```
+/// 
 pub fn function_capture(
   function: Expression(a),
   before_hole: List(Expression(a)),
@@ -1464,13 +2528,60 @@ fn capture_doc(
   |> doc.group
 }
 
+/// Generates a top-level function definition, passing the function name to the
+/// continuing function so it can be called later.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use square <- trick.function("square", trick.Private, {
+///     use value <- trick.parameter("value", trick.float_type())
+///     trick.multiply_float(value, value)
+///     |> trick.expression
+///     |> trick.function_body
+///   })
+/// 
+///   use circle_area <- trick.function("circle_area", trick.Public, {
+///     use radius <- trick.parameter("radius", trick.float_type())
+///     trick.call(square, [radius])
+///     |> trick.multiple_float(trick.float(3.14))
+///     |> trick.expression
+///     |> trick.function_body
+///   })
+/// 
+///   use main <- trick.function("main", trick.Public, trick.function_body(
+///     trick.expression(
+///       trick.echo_(trick.call(circle_area, [trick.float(5.0)]), None)
+///     )
+///   ))
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// fn square(value: Float) -> Float {
+///   value *. value
+/// }
+/// 
+/// pub fn circle_area(radius: Float) -> Float {
+///   square(radius) *. 3.14
+/// }
+/// 
+/// pub fn main() -> Float {
+///   echo circle_area(5.0)
+/// }
+/// ```
+/// 
 pub fn function(
   name: String,
   publicity: Publicity,
   function: FunctionBuilder(a),
-  continue: fn(Expression(Constant)) -> Definition,
-) -> Definition {
-  use state <- Definition
+  continue: fn(Expression(Constant)) -> Module,
+) -> Module {
+  use state <- Module
 
   let #(state, return_type) = next_unbound(state)
 
@@ -1483,7 +2594,7 @@ pub fn function(
     list.try_fold(function.parameters, False, fn(found_labelled, parameter) {
       case parameter.label {
         None if found_labelled ->
-          Error(UnlabelledParameterAfterLabelledParameter)
+          Error(UnlabelledParameterAfterLabelledParameter(parameter.name))
         None -> Ok(False)
         Some(_) -> Ok(True)
       }
@@ -1566,18 +2677,58 @@ pub fn function(
   ))
 }
 
-pub fn empty() -> Definition {
-  use state <- Definition
+/// Marks the end of a module.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use _ <- trick.constant("pi", trick.Public, trick.float(3.14))
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// // -> Ok("pub const pi = 3.14")
+/// ```
+/// 
+pub fn end_module() -> Module {
+  use state <- Module
   Ok(#(state, doc.empty))
 }
 
+/// Generates a top-level constant from a constant expression, passing the name
+/// of the constant to the continuing function allowing it to be used.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use hello <- trick.constant("hello", trick.Private, trick.string("Hello,"))
+///   use world <- trick.constant("world", trick.Private, trick.string(" world!"))
+///   use hello_world <- trick.constant(
+///     "hello_world",
+///     trick.Public,
+///     trick.concatenate(hello, world),
+///   )
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// const hello = "Hello,"
+/// const world = " world!"
+/// pub const hello_world = hello <> world
+/// ```
+/// 
 pub fn constant(
   name: String,
   publicity: Publicity,
   value: Expression(Constant),
-  continue: fn(Expression(Constant)) -> Definition,
-) -> Definition {
-  use state <- Definition
+  continue: fn(Expression(Constant)) -> Module,
+) -> Module {
+  use state <- Module
 
   use #(state, value) <- result.try(value.compile(state))
 
@@ -1604,11 +2755,20 @@ pub fn constant(
   ))
 }
 
-pub fn doc_comment(
-  comment: String,
-  continue: fn() -> Definition,
-) -> Definition {
-  use state <- Definition
+/// Generates a doc comment in a module.
+/// 
+/// ### Examples
+/// 
+/// {
+///   use <- trick.doc_comment(
+///     "The ultimate answer to life, the universe, and everything."
+///   )
+///   use _ <- trick.constant("the_answer", trick.Public, trick.int(42))
+///   trick.end_module()
+/// }
+/// 
+pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
+  use state <- Module
 
   use #(state, rest) <- result.try(continue().compile(state))
 
@@ -1701,21 +2861,68 @@ fn letter(id: Int) -> String {
   }
 }
 
-pub opaque type Argument {
+/// A function argument with an optional label.
+/// 
+pub type Argument {
   Argument(label: Option(String), value: Expression(Variable))
-}
-
-pub fn argument(
-  label: Option(String),
-  value: Expression(Variable),
-) -> Argument {
-  Argument(label, value)
 }
 
 type CompiledArgument {
   CompiledArgument(label: Option(String), value: Compiled)
 }
 
+/// Generates a function call, allowing you to specify labelled arguments. For
+/// a call with no labelled arguments, it's more convenient to simply use
+/// [`call`](#call).
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use function_with_labels <- trick.function(
+///     "function_with_labels",
+///     trick.Private,
+///     {
+///       use _ <- trick.parameter("unlabelled", trick.int_type())
+///       use _ <- trick.labelled_parameter("label", "name", trick.float_type())
+///       use _ <- trick.labelled_parameter(
+///         "other_label",
+///         "different_name",
+///         trick.bool_type(),
+///       )
+///       trick.todo_(None) |> trick.expression |> trick.function_body
+///     },
+///   )
+/// 
+///   use main <- trick.function("main", trick.Public, trick.function_body(
+///     trick.expression(trick.labelled_call(function_with_labels, [
+///       trick.Argument(None, trick.int(42)),
+///       trick.Argument(Some("other_label"), trick.bool(False)),
+///       trick.Argument(Some("label"), trick.float(3.14)),
+///     ]))
+///   ))
+/// 
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// fn function_with_labels(
+///   unlabelled: Int,
+///   label name: Float,
+///   other_label different_name: Bool,
+/// ) -> a {
+///   todo
+/// }
+/// 
+/// pub fn main() -> a {
+///   function_with_labels(42, other_label: False, label: 3.14)
+/// }
+/// ```
+/// 
 pub fn labelled_call(
   function: Expression(a),
   arguments: List(Argument),
@@ -1915,17 +3122,20 @@ fn assert_no_labelled_arguments(
   })
 }
 
-pub opaque type CustomType {
+/// Indicates that a custom type has no type parameters.
+/// 
+pub type NoParameters
+
+/// Indicates that a custom type has one or more type parameters.
+/// 
+pub type HasParameters
+
+/// Information about a custom type.
+/// 
+pub opaque type CustomType(a) {
   CustomType(
     compile: fn(State, CustomTypeHead) ->
       Result(#(State, CustomTypeInfo), Error),
-  )
-}
-
-pub opaque type TypeConstructors {
-  TypeConstructors(
-    compile: fn(State, ConcreteType) ->
-      Result(#(State, List(Constructor), Definition), Error),
   )
 }
 
@@ -1935,32 +3145,76 @@ type CustomTypeInfo {
     type_: ConcreteType,
     constructors: List(Constructor),
     parameters: List(#(String, ConcreteType)),
-    rest: Definition,
+    rest: Module,
   )
 }
 
+type CustomTypeType {
+  InProgress(ConcreteType)
+  Finished(ConcreteType)
+}
+
 type CustomTypeHead {
-  CustomTypeHead(name: String, parameters: List(#(String, ConcreteType)))
+  CustomTypeHead(
+    name: String,
+    parameters: List(#(String, ConcreteType)),
+    type_: CustomTypeType,
+  )
 }
 
 type Constructor {
   Constructor(name: String, fields: List(Field))
 }
 
+/// The field of a custom type variant.
+/// 
 pub type Field {
   Field(label: Option(String), type_: Type)
 }
 
+/// Begins a custom type declaration, passing the type to the continuing function
+/// so it can be used in constructors as a recursive definition, or in later
+/// functions and types.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use list <- trick.custom_type("List", trick.Public)
+///   use a <- trick.type_parameter("a")
+///   use empty <- trick.constructor("Empty", [])
+///   use non_empty <- trick.constructor("NonEmpty", [
+///     trick.Field(Some("head"), a),
+///     trick.Field(Some("tail"), list),
+///   ])
+///   use <- trick.end_custom_type
+/// 
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// pub type List(a) {
+///   Empty
+///   NonEmpty(head: a, tail: List(a))
+/// }
+/// ```
+/// 
 pub fn custom_type(
   name: String,
   publicity: Publicity,
-  continue: fn() -> CustomType,
-) -> Definition {
-  use state <- Definition
+  continue: fn(Type) -> CustomType(a),
+) -> Module {
+  use state <- Module
 
-  let info = CustomTypeHead(name, parameters: [])
+  let #(state, unbound) = next_unbound(state)
 
-  let custom_type = continue()
+  let info = CustomTypeHead(name, parameters: [], type_: InProgress(unbound))
+
+  let custom_type = continue(concrete(unbound))
   use #(state, custom_type) <- result.try(custom_type.compile(state, info))
   use #(state, rest) <- result.try(custom_type.rest.compile(state))
 
@@ -2063,12 +3317,40 @@ pub fn custom_type(
   ))
 }
 
+/// Generates a constructor for a custom types.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use wibble_type <- trick.custom_type("Wibble", trick.Public)
+///   use wibble <- trick.constructor("Wibble", [
+///     trick.Field(None, trick.int_type()),
+///     trick.Field(None, trick.float_type()),
+///     trick.Field(Some("a_label"), trick.string_type()),
+///     trick.Field(Some("another_label"), trick.bool_type()),
+///   ])
+///   use <- trick.end_custom_type
+/// 
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// pub type Wibble {
+///   Wibble(Int, Float, a_label: String, another_label: Bool)
+/// }
+/// ```
+/// 
 pub fn constructor(
   name: String,
   fields: List(Field),
-  continue: fn(Expression(Constant)) -> TypeConstructors,
-) -> TypeConstructors {
-  use state, type_ <- TypeConstructors
+  continue: fn(Expression(Constant)) -> CustomType(NoParameters),
+) -> CustomType(NoParameters) {
+  use state, info <- CustomType
 
   use #(field_map_fields, arity) <- result.try(
     list.try_fold(fields, #(dict.new(), 0), fn(pair, parameter) {
@@ -2087,6 +3369,9 @@ pub fn constructor(
   let field_map = FieldMap(arity:, fields: field_map_fields)
   let #(state, parameter_types) =
     list.map_fold(fields, state, fn(state, field) { field.type_.compile(state) })
+
+  use #(state, type_) <- result.try(ensure_complete(state, info))
+
   let constructor_type = case fields {
     [] -> type_
     _ ->
@@ -2100,22 +3385,85 @@ pub fn constructor(
   let expression = instantiated(doc.from_string(name), constructor_type)
 
   let custom_type = continue(expression)
-  use #(state, constructors, rest) <- result.try(custom_type.compile(
+  use #(state, info) <- result.try(custom_type.compile(
     state,
-    type_,
+    CustomTypeHead(..info, type_: Finished(type_)),
   ))
 
-  Ok(#(state, [Constructor(name:, fields:), ..constructors], rest))
+  Ok(#(
+    state,
+    CustomTypeInfo(..info, constructors: [
+      Constructor(name:, fields:),
+      ..info.constructors
+    ]),
+  ))
+}
+
+fn ensure_complete(
+  state: State,
+  info: CustomTypeHead,
+) -> Result(#(State, ConcreteType), Error) {
+  case info.type_ {
+    InProgress(unbound) -> {
+      let type_ =
+        Custom(
+          module: state.module,
+          name: info.name,
+          generics: list.map(info.parameters, pair.second),
+        )
+      case unify(state, unbound, with: type_) {
+        Ok(#(state, _)) -> Ok(#(state, type_))
+        Error(error) -> Error(error)
+      }
+    }
+    Finished(type_) -> Ok(#(state, type_))
+  }
 }
 
 fn concrete(type_: ConcreteType) -> Type {
   Type(fn(state) { #(state, type_) })
 }
 
+/// Adds a type parameter to a custom type.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use dict <- trick.custom_type("Dict", trick.Public)
+///   use key <- trick.type_parameter("key")
+///   use value <- trick.type_parameter("value")
+///   use <- trick.end_custom_type
+/// 
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// // -> Ok("pub type Dict(key, value)")
+/// ```
+/// 
+/// ```gleam
+/// {
+///   use box_type <- trick.custom_type("Box", trick.Public)
+///   use value <- trick.type_parameter("value")
+///   use box <- trick.constructor("Box", [trick.Field(None, value)])
+///   use <- trick.end_custom_type
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// pub type Box(value) {
+///   Box(value)
+/// }
+/// ```
+/// 
 pub fn type_parameter(
   name: String,
-  continue: fn(Type) -> CustomType,
-) -> CustomType {
+  continue: fn(Type) -> CustomType(a),
+) -> CustomType(HasParameters) {
   use state, info <- CustomType
 
   let #(state, type_) = named_generic(state, name)
@@ -2129,36 +3477,44 @@ pub fn type_parameter(
   continue(concrete(type_)).compile(state, info)
 }
 
-pub fn custom_type_constructors(
-  continue: fn(Type) -> TypeConstructors,
-) -> CustomType {
+/// Marks the end of a custom type definition.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use box_type <- trick.custom_type("Box", trick.Public)
+///   use value <- trick.type_parameter("value")
+///   use box <- trick.constructor("Box", [trick.Field(None, value)])
+///   use <- trick.end_custom_type
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// pub type Box(value) {
+///   Box(value)
+/// }
+/// ```
+/// 
+pub fn end_custom_type(continue: fn() -> Module) -> CustomType(a) {
   use state, info <- CustomType
 
-  let parameters = list.map(info.parameters, fn(parameter) { parameter.1 })
+  use #(state, type_) <- result.try(ensure_complete(state, info))
 
-  let type_ =
-    Custom(module: state.module, name: info.name, generics: parameters)
-
-  use #(state, constructors, rest) <- result.try(
-    continue(concrete(type_)).compile(state, type_),
-  )
+  let rest = continue()
 
   Ok(#(
     state,
     CustomTypeInfo(
-      constructors:,
-      parameters: info.parameters,
-      rest:,
       name: info.name,
       type_:,
+      constructors: [],
+      parameters: info.parameters,
+      rest:,
     ),
   ))
-}
-
-pub fn end_custom_type(continue: fn() -> Definition) -> TypeConstructors {
-  use state, _type <- TypeConstructors
-
-  let rest = continue()
-
-  Ok(#(state, [], rest))
 }

@@ -664,7 +664,7 @@ pub fn function_test() {
       |> trick.expression
       |> trick.function_body
     },
-    fn(_) { trick.empty() },
+    fn(_) { trick.end_module() },
   )
   |> trick.to_string
   |> unwrap
@@ -695,7 +695,7 @@ pub fn multiple_functions_test() {
       }),
     )
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -716,7 +716,9 @@ pub fn multiple_functions_type_check_correctly_test() {
       trick.call(add, [trick.int(1), trick.int(2), trick.int(3)])
       |> trick.expression
       |> trick.function_body
-      |> trick.function("main", trick.Public, _, fn(_main) { trick.empty() })
+      |> trick.function("main", trick.Public, _, fn(_main) {
+        trick.end_module()
+      })
     }
     |> trick.to_string
 
@@ -736,7 +738,7 @@ pub fn labelled_parameter_test() {
     trick.call(add, [trick.int(1), trick.int(2)])
     |> trick.expression
     |> trick.function_body
-    |> trick.function("main", trick.Public, _, fn(_main) { trick.empty() })
+    |> trick.function("main", trick.Public, _, fn(_main) { trick.end_module() })
   }
   |> trick.to_string
   |> unwrap
@@ -758,11 +760,11 @@ pub fn unlabelled_after_labelled_test() {
         |> trick.expression
         |> trick.function_body
       },
-      fn(_add) { trick.empty() },
+      fn(_add) { trick.end_module() },
     )
     |> trick.to_string
 
-  assert error == trick.UnlabelledParameterAfterLabelledParameter
+  assert error == trick.UnlabelledParameterAfterLabelledParameter("c")
 }
 
 pub fn recursive_function_test() {
@@ -777,7 +779,7 @@ pub fn recursive_function_test() {
         trick.call(add, [a, b])
         |> trick.expression
       },
-      fn(_) { trick.empty() },
+      fn(_) { trick.end_module() },
     )
   }
   |> trick.to_string
@@ -798,7 +800,7 @@ pub fn recursive_function_has_correct_type_test() {
           trick.call(add, [a, b, trick.int(1)])
           |> trick.expression
         },
-        fn(_) { trick.empty() },
+        fn(_) { trick.end_module() },
       )
     }
     |> trick.to_string
@@ -825,7 +827,7 @@ pub fn recursive_function_has_correct_type2_test() {
           trick.add(a, b)
           |> trick.expression
         },
-        fn(_) { trick.empty() },
+        fn(_) { trick.end_module() },
       )
     }
     |> trick.to_string
@@ -834,7 +836,9 @@ pub fn recursive_function_has_correct_type2_test() {
 }
 
 pub fn constant_test() {
-  trick.constant("pi", trick.Public, trick.float(3.14), fn(_) { trick.empty() })
+  trick.constant("pi", trick.Public, trick.float(3.14), fn(_) {
+    trick.end_module()
+  })
   |> trick.to_string
   |> unwrap
   |> birdie.snap("constant")
@@ -849,7 +853,7 @@ pub fn multiple_constants_test() {
       trick.Public,
       trick.tuple([e, pi]),
     )
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -867,7 +871,7 @@ pub fn constant_used_in_function_test() {
       |> trick.expression
       |> trick.function_body
     })
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -886,7 +890,7 @@ pub fn constant_referencing_function_test() {
       |> trick.function_body
     })
     use _area2 <- trick.constant("area2", trick.Private, area)
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -905,7 +909,7 @@ pub fn constant_type_checks_correctly_test() {
         |> trick.expression
         |> trick.function_body
       })
-      trick.empty()
+      trick.end_module()
     }
     |> trick.to_string
 
@@ -938,7 +942,7 @@ pub fn type_annotation_printing_test() {
       |> trick.expression
       |> trick.function_body
     },
-    fn(_) { trick.empty() },
+    fn(_) { trick.end_module() },
   )
   |> trick.to_string
   |> unwrap
@@ -1023,15 +1027,15 @@ pub fn labelled_call_test() {
       trick.function_body(
         trick.expression(
           trick.labelled_call(wibble, [
-            trick.argument(None, trick.bool(True)),
-            trick.argument(Some("right"), trick.int(2)),
-            trick.argument(Some("left"), trick.int(1)),
+            trick.Argument(None, trick.bool(True)),
+            trick.Argument(Some("right"), trick.int(2)),
+            trick.Argument(Some("left"), trick.int(1)),
           ]),
         ),
       ),
     )
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1069,15 +1073,15 @@ pub fn labels_affect_ordering_test() {
         trick.function_body(
           trick.expression(
             trick.labelled_call(wibble, [
-              trick.argument(Some("second"), trick.int(1)),
-              trick.argument(Some("third"), trick.float(1.0)),
-              trick.argument(Some("first"), trick.bool(True)),
+              trick.Argument(Some("second"), trick.int(1)),
+              trick.Argument(Some("third"), trick.float(1.0)),
+              trick.Argument(Some("first"), trick.bool(True)),
             ]),
           ),
         ),
       )
 
-      trick.empty()
+      trick.end_module()
     })
 
   assert error == trick.TypeMismatch(expected: type_int, got: type_bool)
@@ -1114,14 +1118,14 @@ pub fn incorrect_arity_labelled_call_test() {
         trick.function_body(
           trick.expression(
             trick.labelled_call(wibble, [
-              trick.argument(Some("second"), trick.float(1.0)),
-              trick.argument(Some("third"), trick.bool(True)),
+              trick.Argument(Some("second"), trick.float(1.0)),
+              trick.Argument(Some("third"), trick.bool(True)),
             ]),
           ),
         ),
       )
 
-      trick.empty()
+      trick.end_module()
     })
 
   assert error == trick.IncorrectNumberOfArguments(expected: 3, got: 2)
@@ -1158,15 +1162,15 @@ pub fn duplicate_label_in_call_test() {
         trick.function_body(
           trick.expression(
             trick.labelled_call(wibble, [
-              trick.argument(Some("second"), trick.int(1)),
-              trick.argument(Some("second"), trick.float(1.0)),
-              trick.argument(Some("third"), trick.bool(True)),
+              trick.Argument(Some("second"), trick.int(1)),
+              trick.Argument(Some("second"), trick.float(1.0)),
+              trick.Argument(Some("third"), trick.bool(True)),
             ]),
           ),
         ),
       )
 
-      trick.empty()
+      trick.end_module()
     })
 
   assert error == trick.DuplicateLabel("second")
@@ -1199,7 +1203,7 @@ pub fn duplicate_label_in_definition_test() {
           |> trick.expression
           |> trick.function_body
         },
-        fn(_) { trick.empty() },
+        fn(_) { trick.end_module() },
       ),
     )
 
@@ -1228,7 +1232,7 @@ pub fn doc_comment_test() {
 to its circumference",
     )
     use _pi <- trick.constant("pi", trick.Internal, trick.float(3.14))
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1237,8 +1241,7 @@ to its circumference",
 
 pub fn custom_type_test() {
   {
-    use <- trick.custom_type("SomeType", trick.Public)
-    use _type <- trick.custom_type_constructors
+    use _type <- trick.custom_type("SomeType", trick.Public)
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use _other_constructor <- trick.constructor("OtherConstructor", [
       trick.Field(None, trick.int_type()),
@@ -1246,7 +1249,7 @@ pub fn custom_type_test() {
     ])
     use <- trick.end_custom_type
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1255,8 +1258,7 @@ pub fn custom_type_test() {
 
 pub fn custom_type_used_in_function_test() {
   {
-    use <- trick.custom_type("SomeType", trick.Public)
-    use type_ <- trick.custom_type_constructors
+    use type_ <- trick.custom_type("SomeType", trick.Public)
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use other_constructor <- trick.constructor("OtherConstructor", [
       trick.Field(None, trick.int_type()),
@@ -1275,7 +1277,7 @@ pub fn custom_type_used_in_function_test() {
       })
     })
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1284,8 +1286,7 @@ pub fn custom_type_used_in_function_test() {
 
 pub fn custom_type_with_labels_test() {
   {
-    use <- trick.custom_type("SomeType", trick.Public)
-    use type_ <- trick.custom_type_constructors
+    use type_ <- trick.custom_type("SomeType", trick.Public)
     use _constructor_name <- trick.constructor("ConstructorName", [])
     use other_constructor <- trick.constructor("OtherConstructor", [
       trick.Field(None, trick.int_type()),
@@ -1299,15 +1300,15 @@ pub fn custom_type_with_labels_test() {
         use value2 <- trick.variable(
           "value2",
           trick.labelled_call(other_constructor, [
-            trick.argument(None, trick.int(10)),
-            trick.argument(Some("wibble"), trick.float(3.14)),
+            trick.Argument(None, trick.int(10)),
+            trick.Argument(Some("wibble"), trick.float(3.14)),
           ]),
         )
         trick.expression(trick.tuple([value, value2]))
       })
     })
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1316,10 +1317,9 @@ pub fn custom_type_with_labels_test() {
 
 pub fn external_custom_type_test() {
   {
-    use <- trick.custom_type("External", trick.Private)
-    use _type <- trick.custom_type_constructors
+    use _type <- trick.custom_type("External", trick.Private)
     use <- trick.end_custom_type
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1328,12 +1328,11 @@ pub fn external_custom_type_test() {
 
 pub fn external_type_with_parameters_test() {
   {
-    use <- trick.custom_type("External", trick.Internal)
+    use _type <- trick.custom_type("External", trick.Internal)
     use _param <- trick.type_parameter("something")
     use _param <- trick.type_parameter("other_thing")
-    use _type <- trick.custom_type_constructors
     use <- trick.end_custom_type
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1342,15 +1341,14 @@ pub fn external_type_with_parameters_test() {
 
 pub fn custom_type_with_parameters_test() {
   {
-    use <- trick.custom_type("Option", trick.Public)
+    use _type <- trick.custom_type("Option", trick.Public)
     use value <- trick.type_parameter("value")
-    use _type <- trick.custom_type_constructors
     use _some <- trick.constructor("Some", [
       trick.Field(label: None, type_: value),
     ])
     use _none <- trick.constructor("None", [])
     use <- trick.end_custom_type
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1359,9 +1357,8 @@ pub fn custom_type_with_parameters_test() {
 
 pub fn construct_generic_custom_type_test() {
   {
-    use <- trick.custom_type("Option", trick.Public)
+    use _type <- trick.custom_type("Option", trick.Public)
     use value <- trick.type_parameter("value")
-    use _type <- trick.custom_type_constructors
     use some <- trick.constructor("Some", [
       trick.Field(label: None, type_: value),
     ])
@@ -1375,7 +1372,7 @@ pub fn construct_generic_custom_type_test() {
         trick.expression(trick.call(some, [trick.string("Hello")]))
       }),
     )
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1385,9 +1382,8 @@ pub fn construct_generic_custom_type_test() {
 pub fn generic_cannot_be_two_types_at_once() {
   let assert Error(error) =
     {
-      use <- trick.custom_type("Double", trick.Public)
+      use _ <- trick.custom_type("Double", trick.Public)
       use value <- trick.type_parameter("value")
-      use _ <- trick.custom_type_constructors
       use double <- trick.constructor("Double", [
         trick.Field(None, value),
         trick.Field(None, value),
@@ -1402,7 +1398,7 @@ pub fn generic_cannot_be_two_types_at_once() {
           ),
         ),
       )
-      trick.empty()
+      trick.end_module()
     }
     |> trick.to_string
   assert error == trick.TypeMismatch(expected: type_int, got: type_string)
@@ -1463,7 +1459,7 @@ pub fn generic_function_called_multiple_times_with_different_types_test() {
       }),
     )
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1489,7 +1485,7 @@ pub fn generic_function_called_with_incompatible_types_test() {
         ),
       )
 
-      trick.empty()
+      trick.end_module()
     }
     |> trick.to_string
 
@@ -1512,7 +1508,7 @@ pub fn generic_function_with_unrelated_generics_test() {
       }),
     )
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1536,7 +1532,7 @@ pub fn generic_returning_function_called_multiple_times_test() {
       }),
     )
 
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
@@ -1551,7 +1547,7 @@ pub fn generic_parameter_cannot_be_used_as_any_test() {
         trick.function_body(trick.expression(trick.add(param, trick.int(1))))
       })
 
-      trick.empty()
+      trick.end_module()
     }
     |> trick.to_string
 
@@ -1573,9 +1569,44 @@ pub fn generic_constant_used_multiple_times_test() {
         )
       }),
     )
-    trick.empty()
+    trick.end_module()
   }
   |> trick.to_string
   |> unwrap
   |> birdie.snap("generic_constant_used_multiple_times")
+}
+
+pub fn recursive_type_test() {
+  {
+    use list <- trick.custom_type("List", trick.Public)
+    use element <- trick.type_parameter("element")
+    use _ <- trick.constructor("Empty", [])
+    use _ <- trick.constructor("NonEmpty", [
+      trick.Field(Some("head"), element),
+      trick.Field(Some("tail"), list),
+    ])
+    use <- trick.end_custom_type
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("recursive_type")
+}
+
+pub fn custom_type_used_in_function_parameter_test() {
+  {
+    use type_ <- trick.custom_type("SomeType", trick.Public)
+    use <- trick.end_custom_type
+
+    use _ <- trick.function("thing", trick.Public, {
+      use _ <- trick.parameter("wibble", type_)
+      trick.function_body(trick.expression(trick.nil()))
+    })
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("custom_type_used_in_function_parameter")
 }
