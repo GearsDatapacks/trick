@@ -237,7 +237,34 @@ pub type Error {
 }
 
 type Compiled {
-  Compiled(document: Document, type_: ConcreteType)
+  Compiled(document: Document, type_: ConcreteType, precedence: Int)
+}
+
+const precedence_or = 1
+
+const precedence_and = 2
+
+const precedence_equality = 3
+
+const precedence_compare = 4
+
+const precedence_concatenate = 5
+
+// const precedence_pipe = 6
+
+const precedence_add = 7
+
+const precedence_multiply = 8
+
+const precedence_prefix = 9
+
+const precedence_unit = 10
+
+fn maybe_wrap(value: Compiled, precedence: Int) -> Document {
+  case value.precedence < precedence {
+    True -> block_doc(value.document)
+    False -> value.document
+  }
 }
 
 /// The type of a value. This is different to [`ConcreteType`](#ConcreteType)
@@ -619,10 +646,14 @@ fn do_generalise(
   }
 }
 
-fn instantiated(doc: Document, type_: ConcreteType) -> Expression(_) {
+fn instantiated(
+  doc: Document,
+  type_: ConcreteType,
+  precedence: Int,
+) -> Expression(_) {
   use state <- Expression
   let #(state, type_) = instantiate(state, type_)
-  Ok(#(state, Compiled(doc, type_)))
+  Ok(#(state, Compiled(doc, type_, precedence)))
 }
 
 /// Returns the `Int` type.
@@ -789,7 +820,7 @@ pub fn int(value: Int) -> Expression(a) {
   value
   |> int.to_string
   |> doc.from_string
-  |> Compiled(type_int)
+  |> Compiled(type_int, precedence_unit)
   |> doc_to_expression
 }
 
@@ -807,7 +838,7 @@ pub fn int_base2(value: Int) -> Expression(a) {
   |> int.to_base2
   |> doc.from_string
   |> doc.prepend(doc.from_string("0b"))
-  |> Compiled(type_int)
+  |> Compiled(type_int, precedence_unit)
   |> doc_to_expression
 }
 
@@ -825,7 +856,7 @@ pub fn int_base8(value: Int) -> Expression(a) {
   |> int.to_base8
   |> doc.from_string
   |> doc.prepend(doc.from_string("0o"))
-  |> Compiled(type_int)
+  |> Compiled(type_int, precedence_unit)
   |> doc_to_expression
 }
 
@@ -843,7 +874,7 @@ pub fn int_base16(value: Int) -> Expression(a) {
   |> int.to_base16
   |> doc.from_string
   |> doc.prepend(doc.from_string("0x"))
-  |> Compiled(type_int)
+  |> Compiled(type_int, precedence_unit)
   |> doc_to_expression
 }
 
@@ -860,7 +891,7 @@ pub fn float(value: Float) -> Expression(a) {
   value
   |> float.to_string
   |> doc.from_string
-  |> Compiled(type_float)
+  |> Compiled(type_float, precedence_unit)
   |> doc_to_expression
 }
 
@@ -877,7 +908,7 @@ pub fn string(value: String) -> Expression(a) {
   value
   |> escape_string_literal
   |> doc.from_string
-  |> Compiled(type_string)
+  |> Compiled(type_string, precedence_unit)
   |> doc_to_expression
 }
 
@@ -894,7 +925,7 @@ pub fn bool(value: Bool) -> Expression(a) {
   value
   |> bool.to_string
   |> doc.from_string
-  |> Compiled(type_bool)
+  |> Compiled(type_bool, precedence_unit)
   |> doc_to_expression
 }
 
@@ -910,7 +941,7 @@ pub fn bool(value: Bool) -> Expression(a) {
 pub fn nil() -> Expression(a) {
   "Nil"
   |> doc.from_string
-  |> Compiled(type_nil)
+  |> Compiled(type_nil, precedence_unit)
   |> doc_to_expression
 }
 
@@ -945,6 +976,7 @@ fn binary_operator(
   right: Expression(_),
   operand_type: ConcreteType,
   result_type: ConcreteType,
+  precedence: Int,
 ) -> Expression(_) {
   use state <- Expression
   use #(state, left) <- result.try(left.compile(state))
@@ -954,9 +986,13 @@ fn binary_operator(
 
   Ok(#(
     state,
-    [left.document, doc.from_string(" " <> operator <> " "), right.document]
+    [
+      maybe_wrap(left, precedence),
+      doc.from_string(" " <> operator <> " "),
+      maybe_wrap(right, precedence + 1),
+    ]
       |> doc.concat
-      |> Compiled(result_type),
+      |> Compiled(result_type, precedence),
   ))
 }
 
@@ -970,7 +1006,7 @@ fn binary_operator(
 /// ```
 /// 
 pub fn add(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
-  binary_operator(left, "+", right, type_int, type_int)
+  binary_operator(left, "+", right, type_int, type_int, precedence_add)
 }
 
 /// Generates a `+.` operation.
@@ -987,7 +1023,7 @@ pub fn add_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "+.", right, type_float, type_float)
+  binary_operator(left, "+.", right, type_float, type_float, precedence_add)
 }
 
 /// Generates a `-` operation.
@@ -1003,7 +1039,7 @@ pub fn subtract(
   from left: Expression(_),
   subtract right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "-", right, type_int, type_int)
+  binary_operator(left, "-", right, type_int, type_int, precedence_add)
 }
 
 /// Generates a `-.` operation.
@@ -1020,7 +1056,7 @@ pub fn subtract_float(
   from left: Expression(_),
   subtract right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "-.", right, type_float, type_float)
+  binary_operator(left, "-.", right, type_float, type_float, precedence_add)
 }
 
 /// Generates a `*` operation.
@@ -1036,7 +1072,7 @@ pub fn multiply(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "*", right, type_int, type_int)
+  binary_operator(left, "*", right, type_int, type_int, precedence_multiply)
 }
 
 /// Generates a `*.` operation.
@@ -1053,7 +1089,14 @@ pub fn multiply_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "*.", right, type_float, type_float)
+  binary_operator(
+    left,
+    "*.",
+    right,
+    type_float,
+    type_float,
+    precedence_multiply,
+  )
 }
 
 /// Generates a `/` operation.
@@ -1069,7 +1112,7 @@ pub fn divide(
   divide left: Expression(_),
   by right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "/", right, type_int, type_int)
+  binary_operator(left, "/", right, type_int, type_int, precedence_multiply)
 }
 
 /// Generates a `/.` operation.
@@ -1086,7 +1129,14 @@ pub fn divide_float(
   divide left: Expression(_),
   by right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "/.", right, type_float, type_float)
+  binary_operator(
+    left,
+    "/.",
+    right,
+    type_float,
+    type_float,
+    precedence_multiply,
+  )
 }
 
 /// Generates a `%` operation.
@@ -1094,7 +1144,7 @@ pub fn divide_float(
 /// ### Examples
 /// 
 /// ```gleam
-/// trick.modulo(trick.int(1), trick.int(2)) |> trick.expression_to_string
+/// trick.remainder(trick.int(1), trick.int(2)) |> trick.expression_to_string
 /// // -> Ok("1 % 2")
 /// ```
 /// 
@@ -1102,7 +1152,7 @@ pub fn remainder(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "%", right, type_int, type_int)
+  binary_operator(left, "%", right, type_int, type_int, precedence_multiply)
 }
 
 /// Generates a `<>` operation.
@@ -1116,7 +1166,14 @@ pub fn remainder(
 /// ```
 /// 
 pub fn concatenate(left: Expression(a), right: Expression(a)) -> Expression(a) {
-  binary_operator(left, "<>", right, type_string, type_string)
+  binary_operator(
+    left,
+    "<>",
+    right,
+    type_string,
+    type_string,
+    precedence_concatenate,
+  )
 }
 
 /// Generates a `&&` operation.
@@ -1130,7 +1187,7 @@ pub fn concatenate(left: Expression(a), right: Expression(a)) -> Expression(a) {
 /// ```
 /// 
 pub fn and(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
-  binary_operator(left, "&&", right, type_bool, type_bool)
+  binary_operator(left, "&&", right, type_bool, type_bool, precedence_and)
 }
 
 /// Generates a `||` operation.
@@ -1144,7 +1201,7 @@ pub fn and(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
 /// ```
 /// 
 pub fn or(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
-  binary_operator(left, "||", right, type_bool, type_bool)
+  binary_operator(left, "||", right, type_bool, type_bool, precedence_or)
 }
 
 /// Generates a `==` operation. The two values must be of the same type.
@@ -1174,7 +1231,9 @@ pub fn equal(
 ) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
-  binary_operator(left, "==", right, type_, type_bool).compile(state)
+  binary_operator(left, "==", right, type_, type_bool, precedence_equality).compile(
+    state,
+  )
 }
 
 /// Generates a `!=` operation. The two values must be of the same type.
@@ -1204,7 +1263,9 @@ pub fn not_equal(
 ) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
-  binary_operator(left, "!=", right, type_, type_bool).compile(state)
+  binary_operator(left, "!=", right, type_, type_bool, precedence_equality).compile(
+    state,
+  )
 }
 
 /// Generates a `<` operation.
@@ -1220,7 +1281,7 @@ pub fn less_than(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<", right, type_int, type_bool)
+  binary_operator(left, "<", right, type_int, type_bool, precedence_compare)
 }
 
 /// Generates a `<.` operation.
@@ -1237,7 +1298,7 @@ pub fn less_than_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<.", right, type_float, type_bool)
+  binary_operator(left, "<.", right, type_float, type_bool, precedence_compare)
 }
 
 /// Generates a `<=` operation.
@@ -1254,7 +1315,7 @@ pub fn less_than_or_equal(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<=", right, type_int, type_bool)
+  binary_operator(left, "<=", right, type_int, type_bool, precedence_compare)
 }
 
 /// Generates a `<=.` operation.
@@ -1271,7 +1332,7 @@ pub fn less_than_or_equal_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<=.", right, type_float, type_bool)
+  binary_operator(left, "<=.", right, type_float, type_bool, precedence_compare)
 }
 
 /// Generates a `>` operation.
@@ -1288,7 +1349,7 @@ pub fn greater_than(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">", right, type_int, type_bool)
+  binary_operator(left, ">", right, type_int, type_bool, precedence_compare)
 }
 
 /// Generates a `>.` operation.
@@ -1305,7 +1366,7 @@ pub fn greater_than_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">.", right, type_float, type_bool)
+  binary_operator(left, ">.", right, type_float, type_bool, precedence_compare)
 }
 
 /// Generates a `>=` operation.
@@ -1322,7 +1383,7 @@ pub fn greater_than_or_equal(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">=", right, type_int, type_bool)
+  binary_operator(left, ">=", right, type_int, type_bool, precedence_compare)
 }
 
 /// Generates a `>=.` operation.
@@ -1339,7 +1400,7 @@ pub fn greater_than_or_equal_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">=.", right, type_float, type_bool)
+  binary_operator(left, ">=.", right, type_float, type_bool, precedence_compare)
 }
 
 fn unary_operator(
@@ -1352,9 +1413,9 @@ fn unary_operator(
   use #(state, type_) <- result.try(unify(state, value.type_, type_))
   Ok(#(
     state,
-    [doc.from_string(operator), value.document]
+    [doc.from_string(operator), maybe_wrap(value, precedence_prefix)]
       |> doc.concat
-      |> Compiled(type_),
+      |> Compiled(type_, precedence_prefix),
   ))
 }
 
@@ -1435,7 +1496,7 @@ pub fn list(values: List(Expression(a))) -> Expression(a) {
       |> doc.append(doc.break("", ", "))
       |> doc.append(doc.from_string("]"))
       |> doc.group
-      |> Compiled(type_list(element_type)),
+      |> Compiled(type_list(element_type), precedence_unit),
   ))
 }
 
@@ -1473,13 +1534,21 @@ pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
   case message {
-    None -> Ok(#(state, Compiled(doc.from_string("panic"), type_)))
+    None ->
+      Ok(#(state, Compiled(doc.from_string("panic"), type_, precedence_unit)))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
       use #(state, _) <- result.try(unify(state, message.type_, type_string))
       Ok(#(
         state,
-        Compiled(add_message(doc.from_string("panic"), message.document), type_),
+        Compiled(
+          add_message(
+            doc.from_string("panic"),
+            maybe_wrap(message, precedence_unit),
+          ),
+          type_,
+          precedence_unit,
+        ),
       ))
     }
   }
@@ -1509,13 +1578,21 @@ pub fn todo_(message: Option(Expression(a))) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
   case message {
-    None -> Ok(#(state, Compiled(doc.from_string("todo"), type_)))
+    None ->
+      Ok(#(state, Compiled(doc.from_string("todo"), type_, precedence_unit)))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
       use #(state, _) <- result.try(unify(state, message.type_, type_string))
       Ok(#(
         state,
-        Compiled(add_message(doc.from_string("todo"), message.document), type_),
+        Compiled(
+          add_message(
+            doc.from_string("todo"),
+            maybe_wrap(message, precedence_unit),
+          ),
+          type_,
+          precedence_unit,
+        ),
       ))
     }
   }
@@ -1553,11 +1630,18 @@ pub fn echo_(
   let echo_ = doc.prepend(doc.from_string("echo "), to: value.document)
 
   case message {
-    None -> Ok(#(state, Compiled(echo_, value.type_)))
+    None -> Ok(#(state, Compiled(echo_, value.type_, precedence_unit)))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
       use #(state, _) <- result.try(unify(state, message.type_, type_string))
-      Ok(#(state, Compiled(add_message(echo_, message.document), value.type_)))
+      Ok(#(
+        state,
+        Compiled(
+          add_message(echo_, maybe_wrap(message, precedence_unit)),
+          value.type_,
+          precedence_unit,
+        ),
+      ))
     }
   }
 }
@@ -1602,7 +1686,11 @@ pub fn variable(
     |> doc.append(doc.line)
 
   let variable_expression =
-    doc_to_expression(Compiled(doc.from_string(name), value.type_))
+    doc_to_expression(Compiled(
+      doc.from_string(name),
+      value.type_,
+      precedence_unit,
+    ))
 
   let rest = continue(variable_expression)
   use #(state, rest) <- result.try(rest.compile(state))
@@ -1612,6 +1700,7 @@ pub fn variable(
     Compiled(
       doc.prepend(declaration, to: rest.document) |> doc.force_break,
       rest.type_,
+      precedence_unit,
     ),
   ))
 }
@@ -1677,7 +1766,7 @@ pub fn discard(discarded: Statement, continue: fn() -> Statement) -> Statement {
     [statement.document, doc.line, rest.document]
       |> doc.concat
       |> doc.force_break
-      |> Compiled(rest.type_),
+      |> Compiled(rest.type_, precedence_unit),
   ))
 }
 
@@ -1718,7 +1807,7 @@ pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
     [comment, doc.line, rest.document]
       |> doc.concat
       |> doc.force_break
-      |> Compiled(rest.type_),
+      |> Compiled(rest.type_, precedence_unit),
   ))
 }
 
@@ -1758,19 +1847,19 @@ pub fn block(inner: Statement) -> Expression(Variable) {
   use state <- Expression
   use #(state, inner) <- result.try(inner.compile(state))
 
-  Ok(#(
-    state,
-    [
-      doc.break("{ ", "{"),
-      inner.document,
-    ]
-      |> doc.concat
-      |> doc.nest(indent)
-      |> doc.append(doc.break(" ", ""))
-      |> doc.append(doc.from_string("}"))
-      |> doc.group
-      |> Compiled(inner.type_),
-  ))
+  Ok(#(state, Compiled(block_doc(inner.document), inner.type_, precedence_unit)))
+}
+
+fn block_doc(inner: Document) -> Document {
+  [
+    doc.break("{ ", "{"),
+    inner,
+  ]
+  |> doc.concat
+  |> doc.nest(indent)
+  |> doc.append(doc.break(" ", ""))
+  |> doc.append(doc.from_string("}"))
+  |> doc.group
 }
 
 /// Generates an `assert` statement with an optional message. The condition must
@@ -1835,15 +1924,18 @@ pub fn assert_(
   let assert_ = doc.prepend(doc.from_string("assert "), to: condition.document)
 
   case message {
-    None -> Ok(#(state, Compiled(doc.force_break(assert_), type_nil)))
+    None ->
+      Ok(#(state, Compiled(doc.force_break(assert_), type_nil, precedence_unit)))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
       use #(state, _) <- result.try(unify(state, message.type_, type_string))
       Ok(#(
         state,
         Compiled(
-          add_message(assert_, message.document) |> doc.force_break,
+          add_message(assert_, maybe_wrap(message, precedence_unit))
+            |> doc.force_break,
           type_nil,
+          precedence_unit,
         ),
       ))
     }
@@ -1879,7 +1971,7 @@ pub fn tuple(values: List(Expression(a))) -> Expression(a) {
       |> doc.append(doc.break("", ", "))
       |> doc.append(doc.from_string(")"))
       |> doc.group
-      |> Compiled(Tuple(types)),
+      |> Compiled(Tuple(types), precedence_unit),
   ))
 }
 
@@ -1925,12 +2017,12 @@ pub fn tuple_index(tuple: Expression(a), index: Int) -> Expression(Variable) {
   Ok(#(
     state,
     [
-      tuple.document,
+      maybe_wrap(tuple, precedence_unit),
       doc.from_string("."),
       doc.from_string(int.to_string(index)),
     ]
       |> doc.concat
-      |> Compiled(type_),
+      |> Compiled(type_, precedence_unit),
   ))
 }
 
@@ -2005,7 +2097,7 @@ pub fn prepend(
       |> doc.append(doc.soft_break)
       |> doc.append(doc.from_string("]"))
       |> doc.group
-      |> Compiled(list.type_),
+      |> Compiled(list.type_, precedence_unit),
   ))
 }
 
@@ -2103,7 +2195,7 @@ pub fn anonymous(
     state,
     [doc.from_string("fn"), parameter_list, doc.from_string(" "), body_doc]
       |> doc.concat
-      |> Compiled(type_),
+      |> Compiled(type_, precedence_unit),
   ))
 }
 
@@ -2138,7 +2230,8 @@ pub fn recursive(
   let type_ =
     Function(parameters: parameter_types, return: return_type, field_map: None)
 
-  let expression = doc_to_expression(Compiled(doc.from_string(name), type_))
+  let expression =
+    doc_to_expression(Compiled(doc.from_string(name), type_, precedence_unit))
 
   let body = continue(expression)
 
@@ -2167,7 +2260,7 @@ pub fn parameter(
 
   let #(state, type_) = type_.compile(state)
 
-  let expression = Compiled(doc.from_string(name), type_)
+  let expression = Compiled(doc.from_string(name), type_, precedence_unit)
   let function = continue(doc_to_expression(expression))
 
   let parameter = Parameter(name, None, type_)
@@ -2217,7 +2310,7 @@ pub fn labelled_parameter(
 
   let #(state, type_) = type_.compile(state)
 
-  let expression = Compiled(doc.from_string(name), type_)
+  let expression = Compiled(doc.from_string(name), type_, precedence_unit)
   let function = continue(doc_to_expression(expression))
 
   let parameter = Parameter(name, Some(label), type_)
@@ -2349,7 +2442,7 @@ pub fn call(
           )
 
           let doc = call_doc(arguments, function)
-          Ok(#(state, Compiled(doc, return_type)))
+          Ok(#(state, Compiled(doc, return_type, precedence_unit)))
         }
       }
     Unbound(_) -> {
@@ -2365,7 +2458,7 @@ pub fn call(
       use #(state, _) <- result.try(unify(state, called_type, function_type))
 
       let doc = call_doc(arguments, function)
-      Ok(#(state, Compiled(doc, return_type)))
+      Ok(#(state, Compiled(doc, return_type, precedence_unit)))
     }
   }
 }
@@ -2379,7 +2472,7 @@ fn call_doc(arguments: List(Compiled), function: Compiled) -> Document {
   ]
   |> doc.concat
   |> doc.nest(indent)
-  |> doc.prepend(function.document)
+  |> doc.prepend(maybe_wrap(function, precedence_unit))
   |> doc.append(doc.break("", ","))
   |> doc.append(doc.from_string(")"))
   |> doc.group
@@ -2480,7 +2573,14 @@ pub fn function_capture(
               return: return_type,
               field_map: None,
             )
-          Ok(#(state, Compiled(capture_doc(function, before, after), type_)))
+          Ok(#(
+            state,
+            Compiled(
+              capture_doc(function, before, after),
+              type_,
+              precedence_unit,
+            ),
+          ))
         }
       }
     Unbound(_) -> {
@@ -2500,7 +2600,10 @@ pub fn function_capture(
           return: return_type,
           field_map: None,
         )
-      Ok(#(state, Compiled(capture_doc(function, before, after), type_)))
+      Ok(#(
+        state,
+        Compiled(capture_doc(function, before, after), type_, precedence_unit),
+      ))
     }
   }
 }
@@ -2522,7 +2625,7 @@ fn capture_doc(
   ]
   |> doc.concat
   |> doc.nest(indent)
-  |> doc.prepend(function.document)
+  |> doc.prepend(maybe_wrap(function, precedence_unit))
   |> doc.append(doc.break("", ","))
   |> doc.append(doc.from_string(")"))
   |> doc.group
@@ -2655,7 +2758,8 @@ pub fn function(
       field_map: Some(field_map),
     )
 
-  let function_name = instantiated(doc.from_string(name), type_)
+  let function_name =
+    instantiated(doc.from_string(name), type_, precedence_unit)
 
   use #(state, rest) <- result.try(continue(function_name).compile(state))
 
@@ -2734,7 +2838,8 @@ pub fn constant(
 
   let #(state, type_) = generalise(state, value.type_)
 
-  let constant_name = instantiated(doc.from_string(name), type_)
+  let constant_name =
+    instantiated(doc.from_string(name), type_, precedence_unit)
 
   use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
@@ -2976,7 +3081,11 @@ pub fn labelled_call(
 
           Ok(#(
             state,
-            Compiled(labelled_call_doc(arguments, function), return_type),
+            Compiled(
+              labelled_call_doc(arguments, function),
+              return_type,
+              precedence_unit,
+            ),
           ))
         }
       }
@@ -2991,7 +3100,14 @@ pub fn labelled_call(
         )
       use #(state, _) <- result.try(unify(state, called_type, function_type))
 
-      Ok(#(state, Compiled(labelled_call_doc(arguments, function), return_type)))
+      Ok(#(
+        state,
+        Compiled(
+          labelled_call_doc(arguments, function),
+          return_type,
+          precedence_unit,
+        ),
+      ))
     }
   }
 }
@@ -3018,7 +3134,7 @@ fn labelled_call_doc(
   ]
   |> doc.concat
   |> doc.nest(indent)
-  |> doc.prepend(function.document)
+  |> doc.prepend(maybe_wrap(function, precedence_unit))
   |> doc.append(doc.break("", ","))
   |> doc.append(doc.from_string(")"))
   |> doc.group
@@ -3382,7 +3498,8 @@ pub fn constructor(
       )
   }
 
-  let expression = instantiated(doc.from_string(name), constructor_type)
+  let expression =
+    instantiated(doc.from_string(name), constructor_type, precedence_unit)
 
   let custom_type = continue(expression)
   use #(state, info) <- result.try(custom_type.compile(

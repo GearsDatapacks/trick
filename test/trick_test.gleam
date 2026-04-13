@@ -168,6 +168,46 @@ pub fn binary_operator_test() {
     == "False != False"
 }
 
+pub fn operator_precedence_test() {
+  assert trick.add(trick.int(1), trick.int(2))
+    |> trick.multiply(trick.int(3))
+    |> trick.expression_to_string
+    |> unwrap
+    == "{ 1 + 2 } * 3"
+
+  assert trick.int(1)
+    |> trick.multiply(trick.add(trick.int(2), trick.int(3)))
+    |> trick.expression_to_string
+    |> unwrap
+    == "1 * { 2 + 3 }"
+
+  assert trick.int(1)
+    |> trick.multiply(trick.remainder(trick.int(2), trick.int(3)))
+    |> trick.expression_to_string
+    |> unwrap
+    == "1 * { 2 % 3 }"
+
+  assert trick.int(1)
+    |> trick.multiply(trick.int(2))
+    |> trick.remainder(trick.int(3))
+    |> trick.expression_to_string
+    |> unwrap
+    == "1 * 2 % 3"
+
+  assert trick.add(trick.int(1), trick.int(2))
+    |> trick.negate_int
+    |> trick.expression_to_string
+    |> unwrap
+    == "-{ 1 + 2 }"
+
+  assert trick.tuple([trick.int(1), trick.float(2.0)])
+    |> trick.tuple_index(0)
+    |> trick.negate_int
+    |> trick.expression_to_string
+    |> unwrap
+    == "-#(1, 2.0).0"
+}
+
 const type_int = trick.Custom("gleam", "Int", [])
 
 const type_float = trick.Custom("gleam", "Float", [])
