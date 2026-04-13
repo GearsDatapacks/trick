@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: recursive_generic_function
+file: ./test/trick_test.gleam
+test_name: recursive_generic_function_test
+---
+pub fn swap(a: a, b: b) -> f {
+  swap(b, a)
+}
+
+

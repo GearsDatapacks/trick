@@ -2237,8 +2237,7 @@ pub fn recursive(
   let type_ =
     Function(parameters: parameter_types, return: return_type, field_map: None)
 
-  let expression =
-    doc_to_expression(Compiled(doc.from_string(name), type_, precedence_unit))
+  let expression = instantiated(doc.from_string(name), type_, precedence_unit)
 
   let body = continue(expression)
 

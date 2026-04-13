@@ -1724,3 +1724,18 @@ pub fn custom_type_used_in_function_parameter_test() {
   |> unwrap
   |> birdie.snap("custom_type_used_in_function_parameter")
 }
+
+pub fn recursive_generic_function_test() {
+  {
+    use _ <- trick.function("swap", trick.Public, {
+      use a <- trick.parameter("a", trick.generic("a"))
+      use b <- trick.parameter("b", trick.generic("b"))
+      use swap <- trick.recursive
+      swap |> trick.call([b, a]) |> trick.expression
+    })
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("recursive_generic_function")
+}
