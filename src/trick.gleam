@@ -15,7 +15,7 @@
 ////       "radius_squared",
 ////       trick.multiply_float(radius, radius),
 ////     )
-////     trick.expression(trick.multiply_float(radius_squared), pi)
+////     trick.expression(trick.multiply_float(radius_squared, pi))
 ////   })
 //// })
 //// trick.end_module()

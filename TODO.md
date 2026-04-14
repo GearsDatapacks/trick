@@ -23,3 +23,4 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 
 - Fix the API for generic types
 - Ensure types are correct if user accidentally shadows a variable
+- Prevent generation of duplicate constructors, functions, constants, and types
