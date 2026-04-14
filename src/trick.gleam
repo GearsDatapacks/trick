@@ -241,6 +241,203 @@ pub type Error {
   /// More than one capture hole is provided to a
   /// [`function_capture_alt`](#function_capture_alt) call
   DuplicateCaptureHole
+  /// The name of a value does not match what is expected.
+  InvalidName(name: String, expected: NameCase)
+}
+
+pub type NameCase {
+  SnakeCase
+  PascalCase
+}
+
+fn check_name_case(name: String, casing: NameCase) -> Result(Nil, Error) {
+  let matches = case casing {
+    SnakeCase -> is_snake_case(name)
+    PascalCase -> is_pascal_case(name)
+  }
+
+  case matches {
+    True -> Ok(Nil)
+    False -> Error(InvalidName(name, casing))
+  }
+}
+
+fn is_pascal_case(name: String) -> Bool {
+  case name {
+    "A" <> name
+    | "B" <> name
+    | "C" <> name
+    | "D" <> name
+    | "E" <> name
+    | "F" <> name
+    | "G" <> name
+    | "H" <> name
+    | "I" <> name
+    | "J" <> name
+    | "K" <> name
+    | "L" <> name
+    | "M" <> name
+    | "N" <> name
+    | "O" <> name
+    | "P" <> name
+    | "Q" <> name
+    | "R" <> name
+    | "S" <> name
+    | "T" <> name
+    | "U" <> name
+    | "V" <> name
+    | "W" <> name
+    | "X" <> name
+    | "Y" <> name
+    | "Z" <> name -> is_pascal_case_loop(name)
+    _ -> False
+  }
+}
+
+fn is_pascal_case_loop(name: String) -> Bool {
+  case name {
+    "" -> True
+    "A" <> name
+    | "B" <> name
+    | "C" <> name
+    | "D" <> name
+    | "E" <> name
+    | "F" <> name
+    | "G" <> name
+    | "H" <> name
+    | "I" <> name
+    | "J" <> name
+    | "K" <> name
+    | "L" <> name
+    | "M" <> name
+    | "N" <> name
+    | "O" <> name
+    | "P" <> name
+    | "Q" <> name
+    | "R" <> name
+    | "S" <> name
+    | "T" <> name
+    | "U" <> name
+    | "V" <> name
+    | "W" <> name
+    | "X" <> name
+    | "Y" <> name
+    | "Z" <> name
+    | "a" <> name
+    | "b" <> name
+    | "c" <> name
+    | "d" <> name
+    | "e" <> name
+    | "f" <> name
+    | "g" <> name
+    | "h" <> name
+    | "i" <> name
+    | "j" <> name
+    | "k" <> name
+    | "l" <> name
+    | "m" <> name
+    | "n" <> name
+    | "o" <> name
+    | "p" <> name
+    | "q" <> name
+    | "r" <> name
+    | "s" <> name
+    | "t" <> name
+    | "u" <> name
+    | "v" <> name
+    | "w" <> name
+    | "x" <> name
+    | "y" <> name
+    | "z" <> name
+    | "0" <> name
+    | "1" <> name
+    | "2" <> name
+    | "3" <> name
+    | "4" <> name
+    | "5" <> name
+    | "6" <> name
+    | "7" <> name
+    | "8" <> name
+    | "9" <> name -> is_pascal_case_loop(name)
+    _ -> False
+  }
+}
+
+fn is_snake_case(name: String) -> Bool {
+  case name {
+    "_" <> name
+    | "a" <> name
+    | "b" <> name
+    | "c" <> name
+    | "d" <> name
+    | "e" <> name
+    | "f" <> name
+    | "g" <> name
+    | "h" <> name
+    | "i" <> name
+    | "j" <> name
+    | "k" <> name
+    | "l" <> name
+    | "m" <> name
+    | "n" <> name
+    | "o" <> name
+    | "p" <> name
+    | "q" <> name
+    | "r" <> name
+    | "s" <> name
+    | "t" <> name
+    | "u" <> name
+    | "v" <> name
+    | "w" <> name
+    | "x" <> name
+    | "y" <> name
+    | "z" <> name -> is_snake_case_loop(name)
+    _ -> False
+  }
+}
+
+fn is_snake_case_loop(name: String) -> Bool {
+  case name {
+    "" -> True
+    "_" <> name
+    | "a" <> name
+    | "b" <> name
+    | "c" <> name
+    | "d" <> name
+    | "e" <> name
+    | "f" <> name
+    | "g" <> name
+    | "h" <> name
+    | "i" <> name
+    | "j" <> name
+    | "k" <> name
+    | "l" <> name
+    | "m" <> name
+    | "n" <> name
+    | "o" <> name
+    | "p" <> name
+    | "q" <> name
+    | "r" <> name
+    | "s" <> name
+    | "t" <> name
+    | "u" <> name
+    | "v" <> name
+    | "w" <> name
+    | "x" <> name
+    | "y" <> name
+    | "z" <> name
+    | "0" <> name
+    | "1" <> name
+    | "2" <> name
+    | "3" <> name
+    | "4" <> name
+    | "5" <> name
+    | "6" <> name
+    | "7" <> name
+    | "8" <> name
+    | "9" <> name -> is_snake_case_loop(name)
+    _ -> False
+  }
 }
 
 type Compiled {
@@ -279,7 +476,7 @@ fn maybe_wrap(value: Compiled, precedence: Int) -> Document {
 /// information yet.
 /// 
 pub opaque type Type {
-  Type(compile: fn(State) -> #(State, ConcreteType))
+  Type(compile: fn(State) -> Result(#(State, ConcreteType), Error))
 }
 
 /// A known type for an expression. Unlike [`Type`](#Type), this exists after
@@ -713,7 +910,7 @@ pub fn utf_codepoint_type() -> Type {
 /// 
 pub fn list_type(of element_type: Type) -> Type {
   use state <- Type
-  let #(state, element_type) = element_type.compile(state)
+  use #(state, element_type) <- result.map(element_type.compile(state))
   #(state, type_list(element_type))
 }
 
@@ -721,20 +918,46 @@ pub fn list_type(of element_type: Type) -> Type {
 /// 
 pub fn tuple_type(containing elements: List(Type)) -> Type {
   use state <- Type
-  let #(state, elements) =
-    list.map_fold(elements, state, fn(state, element) { element.compile(state) })
+  use #(state, elements) <- result.map(
+    try_map_fold(elements, state, fn(state, element) { element.compile(state) }),
+  )
   #(state, Tuple(elements:))
+}
+
+fn try_map_fold(
+  list: List(elem),
+  acc: acc,
+  f: fn(acc, elem) -> Result(#(acc, out), error),
+) -> Result(#(acc, List(out)), error) {
+  try_map_fold_loop(list, acc, [], f)
+}
+
+fn try_map_fold_loop(
+  list: List(elem),
+  acc: acc,
+  out: List(out),
+  f: fn(acc, elem) -> Result(#(acc, out), error),
+) -> Result(#(acc, List(out)), error) {
+  case list {
+    [] -> Ok(#(acc, list.reverse(out)))
+    [first, ..rest] ->
+      case f(acc, first) {
+        Ok(#(acc, next)) -> try_map_fold_loop(rest, acc, [next, ..out], f)
+        Error(error) -> Error(error)
+      }
+  }
 }
 
 /// Returns a function type with the specified parameters and return type.
 /// 
 pub fn function_type(parameters: List(Type), return: Type) -> Type {
   use state <- Type
-  let #(state, parameters) =
-    list.map_fold(parameters, state, fn(state, parameter) {
+  use #(state, parameters) <- result.try(
+    try_map_fold(parameters, state, fn(state, parameter) {
       parameter.compile(state)
-    })
-  let #(state, return) = return.compile(state)
+    }),
+  )
+  use #(state, return) <- result.map(return.compile(state))
   #(state, Function(parameters:, return:, field_map: None))
 }
 
@@ -742,6 +965,7 @@ pub fn function_type(parameters: List(Type), return: Type) -> Type {
 /// 
 pub fn generic(name: String) -> Type {
   use state <- Type
+  use _ <- result.map(check_name_case(name, SnakeCase))
   case dict.get(state.generic_variable_names, name) {
     Ok(type_) -> #(state, type_)
     Error(_) -> {
@@ -1686,6 +1910,7 @@ pub fn variable(
   continue: fn(Expression(Variable)) -> Statement,
 ) -> Statement {
   use state <- Statement
+  use _ <- result.try(check_name_case(name, SnakeCase))
   use #(state, value) <- result.try(value.compile(state))
 
   let declaration =
@@ -2272,7 +2497,8 @@ pub fn parameter(
 ) -> FunctionBuilder(a) {
   use state, function_name, function_type, parameters <- FunctionBuilder
 
-  let #(state, type_) = type_.compile(state)
+  use _ <- result.try(check_name_case(name, SnakeCase))
+  use #(state, type_) <- result.try(type_.compile(state))
 
   let expression = Compiled(doc.from_string(name), type_, precedence_unit)
   let function = continue(doc_to_expression(expression))
@@ -2322,7 +2548,10 @@ pub fn labelled_parameter(
 ) -> FunctionBuilder(Labelled) {
   use state, function_name, function_type, parameters <- FunctionBuilder
 
-  let #(state, type_) = type_.compile(state)
+  use _ <- result.try(check_name_case(name, SnakeCase))
+  use _ <- result.try(check_name_case(label, SnakeCase))
+
+  use #(state, type_) <- result.try(type_.compile(state))
 
   let expression = Compiled(doc.from_string(name), type_, precedence_unit)
   let function = continue(doc_to_expression(expression))
@@ -2804,6 +3033,7 @@ pub fn function(
 ) -> Module {
   use state <- Module
 
+  use _ <- result.try(check_name_case(name, SnakeCase))
   let #(state, return_type) = next_unbound(state)
 
   use #(state, function) <- result.try(
@@ -2956,6 +3186,7 @@ pub fn constant(
 ) -> Module {
   use state <- Module
 
+  use _ <- result.try(check_name_case(name, SnakeCase))
   use #(state, value) <- result.try(value.compile(state))
 
   let #(state, type_) = generalise(state, value.type_)
@@ -3193,6 +3424,10 @@ pub fn labelled_call(
   use #(state, function) <- result.try(function.compile(state))
   use #(state, arguments) <- result.try(
     try_fold_with_state(state, arguments, [], fn(state, arguments, argument) {
+      use _ <- result.try(case argument.label {
+        Some(label) -> check_name_case(label, SnakeCase)
+        None -> Ok(Nil)
+      })
       use #(state, value) <- result.map(argument.value.compile(state))
       #(state, [CompiledArgument(label: argument.label, value:), ..arguments])
     }),
@@ -3483,6 +3718,7 @@ pub fn custom_type(
 ) -> Module {
   use state <- Module
 
+  use _ <- result.try(check_name_case(name, PascalCase))
   let #(state, unbound) = next_unbound(state)
 
   let info = CustomTypeHead(name, parameters: [], type_: InProgress(unbound))
@@ -3520,21 +3756,21 @@ pub fn custom_type(
     ))
   })
 
-  let #(state, constructors) =
-    list.map_fold(custom_type.constructors, state, fn(state, constructor) {
+  use #(state, constructors) <- result.try(
+    try_map_fold(custom_type.constructors, state, fn(state, constructor) {
       case constructor.fields {
-        [] -> #(state, doc.from_string(constructor.name))
+        [] -> Ok(#(state, doc.from_string(constructor.name)))
         _ -> {
-          let #(state, fields) =
-            list.map_fold(constructor.fields, state, fn(state, field) {
+          use #(state, fields) <- result.map(
+            try_map_fold(constructor.fields, state, fn(state, field) {
               case field.label {
                 None -> {
-                  let #(state, type_) = field.type_.compile(state)
+                  use #(state, type_) <- result.map(field.type_.compile(state))
                   let #(state, annotation) = print_type(state, type_)
                   #(state, doc.from_string(annotation))
                 }
                 Some(label) -> {
-                  let #(state, type_) = field.type_.compile(state)
+                  use #(state, type_) <- result.map(field.type_.compile(state))
                   let #(state, annotation) = print_type(state, type_)
                   #(
                     state,
@@ -3547,7 +3783,8 @@ pub fn custom_type(
                   )
                 }
               }
-            })
+            }),
+          )
           #(
             state,
             [
@@ -3565,7 +3802,8 @@ pub fn custom_type(
           )
         }
       }
-    })
+    }),
+  )
 
   let constructors =
     constructors
@@ -3627,23 +3865,27 @@ pub fn constructor(
 ) -> CustomType(NoParameters) {
   use state, info <- CustomType
 
+  use _ <- result.try(check_name_case(name, PascalCase))
   use #(field_map_fields, arity) <- result.try(
     list.try_fold(fields, #(dict.new(), 0), fn(pair, parameter) {
       let #(map, index) = pair
       case parameter.label {
         None -> Ok(#(map, index + 1))
-        Some(label) ->
+        Some(label) -> {
+          use _ <- result.try(check_name_case(label, SnakeCase))
           case dict.get(map, label) {
             Error(_) -> Ok(#(dict.insert(map, label, index), index + 1))
             Ok(_) -> Error(DuplicateLabel(label:))
           }
+        }
       }
     }),
   )
 
   let field_map = FieldMap(arity:, fields: field_map_fields)
-  let #(state, parameter_types) =
-    list.map_fold(fields, state, fn(state, field) { field.type_.compile(state) })
+  use #(state, parameter_types) <- result.try(
+    try_map_fold(fields, state, fn(state, field) { field.type_.compile(state) }),
+  )
 
   use #(state, type_) <- result.try(ensure_complete(state, info))
 
@@ -3697,7 +3939,7 @@ fn ensure_complete(
 }
 
 fn concrete(type_: ConcreteType) -> Type {
-  Type(fn(state) { #(state, type_) })
+  Type(fn(state) { Ok(#(state, type_)) })
 }
 
 /// Adds a type parameter to a custom type.
@@ -3742,6 +3984,7 @@ pub fn type_parameter(
 ) -> CustomType(HasParameters) {
   use state, info <- CustomType
 
+  use _ <- result.try(check_name_case(name, SnakeCase))
   let #(state, type_) = named_generic(state, name)
 
   let info =

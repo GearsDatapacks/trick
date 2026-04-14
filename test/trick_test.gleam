@@ -1739,3 +1739,169 @@ pub fn recursive_generic_function_test() {
   |> unwrap
   |> birdie.snap("recursive_generic_function")
 }
+
+pub fn bad_casing_test() {
+  let assert Error(error) =
+    {
+      use x <- trick.parameter("x", trick.generic("Wibble"))
+      trick.function_body(trick.expression(x))
+    }
+    |> trick.anonymous
+    |> trick.expression_to_string
+  assert error == trick.InvalidName("Wibble", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use x <- trick.parameter("x", trick.generic("wibbleWobble"))
+      trick.function_body(trick.expression(x))
+    }
+    |> trick.anonymous
+    |> trick.expression_to_string
+  assert error == trick.InvalidName("wibbleWobble", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use x <- trick.parameter("X", trick.generic("wibble"))
+      trick.function_body(trick.expression(x))
+    }
+    |> trick.anonymous
+    |> trick.expression_to_string
+  assert error == trick.InvalidName("X", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use x <- trick.parameter("123x", trick.generic("wibble"))
+      trick.function_body(trick.expression(x))
+    }
+    |> trick.anonymous
+    |> trick.expression_to_string
+  assert error == trick.InvalidName("123x", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use name <- trick.labelled_parameter(
+        "label",
+        "name!",
+        trick.generic("wibble"),
+      )
+      trick.function_body(trick.expression(name))
+    }
+    |> trick.function("go", trick.Public, _, fn(_) { trick.end_module() })
+    |> trick.to_string
+  assert error == trick.InvalidName("name!", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use name <- trick.labelled_parameter(
+        "label!",
+        "name",
+        trick.generic("wibble"),
+      )
+      trick.function_body(trick.expression(name))
+    }
+    |> trick.function("go", trick.Public, _, fn(_) { trick.end_module() })
+    |> trick.to_string
+  assert error == trick.InvalidName("label!", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use x <- trick.parameter("x", trick.generic("wibble"))
+      trick.function_body(trick.expression(x))
+    }
+    |> trick.function("MyFavouriteFunction", trick.Public, _, fn(_) {
+      trick.end_module()
+    })
+    |> trick.to_string
+  assert error == trick.InvalidName("MyFavouriteFunction", trick.SnakeCase)
+
+  let assert Error(error) =
+    trick.int(42)
+    |> trick.constant(
+      "The ultimate answer to life, the universe, and everything",
+      trick.Public,
+      _,
+      fn(_) { trick.end_module() },
+    )
+    |> trick.to_string
+  assert error
+    == trick.InvalidName(
+      "The ultimate answer to life, the universe, and everything",
+      trick.SnakeCase,
+    )
+
+  let assert Error(error) =
+    {
+      use some_variable <- trick.variable("some_Variable", trick.int(1))
+      trick.expression(some_variable)
+    }
+    |> trick.block
+    |> trick.expression_to_string
+  assert error == trick.InvalidName("some_Variable", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use some_variable <- trick.variable("some_Variable", trick.int(1))
+      trick.expression(some_variable)
+    }
+    |> trick.block
+    |> trick.expression_to_string
+  assert error == trick.InvalidName("some_Variable", trick.SnakeCase)
+
+  let assert Error(error) =
+    trick.todo_(None)
+    |> trick.labelled_call([
+      trick.Argument(Some("@label-name"), trick.bool(True)),
+    ])
+    |> trick.expression_to_string
+  assert error == trick.InvalidName("@label-name", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("My_Type", trick.Public)
+      use <- trick.end_custom_type
+      trick.end_module()
+    }
+    |> trick.to_string
+  assert error == trick.InvalidName("My_Type", trick.PascalCase)
+
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("my_type", trick.Public)
+      use <- trick.end_custom_type
+      trick.end_module()
+    }
+    |> trick.to_string
+  assert error == trick.InvalidName("my_type", trick.PascalCase)
+
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("MyType", trick.Public)
+      use _ <- trick.constructor("123constructor", [])
+      use <- trick.end_custom_type
+      trick.end_module()
+    }
+    |> trick.to_string
+  assert error == trick.InvalidName("123constructor", trick.PascalCase)
+
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("MyType", trick.Public)
+      use _ <- trick.constructor("Constructor", [
+        trick.Field(Some("LABEL"), trick.int_type()),
+      ])
+      use <- trick.end_custom_type
+      trick.end_module()
+    }
+    |> trick.to_string
+  assert error == trick.InvalidName("LABEL", trick.SnakeCase)
+
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("MyType", trick.Public)
+      use _ <- trick.type_parameter("_Parameter")
+      use <- trick.end_custom_type
+      trick.end_module()
+    }
+    |> trick.to_string
+  assert error == trick.InvalidName("_Parameter", trick.SnakeCase)
+}
