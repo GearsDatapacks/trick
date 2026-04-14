@@ -6,4 +6,3 @@ test_name: external_type_with_parameters_test
 ---
 type External(something, other_thing)
 
-

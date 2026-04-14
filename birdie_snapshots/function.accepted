@@ -1,5 +1,5 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: function
 file: ./test/trick_test.gleam
 test_name: function_test
@@ -7,5 +7,4 @@ test_name: function_test
 fn add(a: Int, b: Int) -> Int {
   a + b
 }
-
 

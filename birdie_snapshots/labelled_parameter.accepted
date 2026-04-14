@@ -12,4 +12,3 @@ pub fn main() -> Int {
   add(1, 2)
 }
 
-

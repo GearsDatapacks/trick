@@ -14,4 +14,3 @@ pub fn main(value: SomeType) -> #(SomeType, SomeType) {
   #(value, value2)
 }
 
-

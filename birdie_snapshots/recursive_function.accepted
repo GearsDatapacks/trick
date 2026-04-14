@@ -8,4 +8,3 @@ fn add(a a: Int, b b: Int) -> a {
   add(a, b)
 }
 
-

@@ -10,4 +10,3 @@ pub fn thing(wibble: SomeType) -> Nil {
   Nil
 }
 
-

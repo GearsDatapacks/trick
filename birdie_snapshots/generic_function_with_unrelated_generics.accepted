@@ -12,4 +12,3 @@ pub fn main() -> #(Int, Float) {
   pair(1, 2.0)
 }
 
-

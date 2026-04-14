@@ -10,4 +10,3 @@ const e: Float = 2.71
 
 pub const mathematical_constants: #(Float, Float) = #(e, pi)
 
-

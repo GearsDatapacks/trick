@@ -1,9 +1,8 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: external_custom_type
 file: ./test/trick_test.gleam
 test_name: external_custom_type_test
 ---
 type External
-
 

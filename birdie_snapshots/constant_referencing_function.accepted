@@ -1,5 +1,5 @@
 ---
-version: 1.4.1
+version: 1.5.4
 title: constant_referencing_function
 file: ./test/trick_test.gleam
 test_name: constant_referencing_function_test
@@ -11,5 +11,4 @@ fn area(radius: Float) -> Float {
 }
 
 const area2: fn(Float) -> Float = area
-
 

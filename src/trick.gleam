@@ -209,7 +209,19 @@ pub opaque type Statement {
 /// A module containing one or more definitions.
 /// 
 pub opaque type Module {
-  Module(compile: fn(State) -> Result(#(State, Document), Error))
+  Module(compile: fn(State) -> Result(#(State, CompiledModule), Error))
+}
+
+type CompiledModule {
+  Empty
+  Definition(Document)
+}
+
+fn separate_definition(definition: CompiledModule) -> Document {
+  case definition {
+    Empty -> doc.line
+    Definition(document) -> doc.prepend(document, doc.lines(2))
+  }
 }
 
 /// A type error.
@@ -1027,7 +1039,8 @@ pub fn expression_to_string(
 ///
 pub fn to_string(module: Module) -> Result(String, Error) {
   case module.compile(new_state()) {
-    Ok(#(_state, definition)) -> Ok(doc.to_string(definition, width))
+    Ok(#(_state, Empty)) -> Ok("")
+    Ok(#(_state, Definition(document))) -> Ok(doc.to_string(document, width))
     Error(error) -> Error(error)
   }
 }
@@ -3117,19 +3130,19 @@ pub fn function(
 
   Ok(#(
     state,
-    [
-      publicity_to_doc(publicity),
-      doc.from_string("fn "),
-      doc.from_string(name),
-      parameter_list,
-      doc.from_string(" -> "),
-      doc.from_string(return_annotation),
-      doc.from_string(" "),
-      body_doc,
-      doc.lines(2),
-      rest,
-    ]
-      |> doc.concat,
+    Definition(
+      doc.concat([
+        publicity_to_doc(publicity),
+        doc.from_string("fn "),
+        doc.from_string(name),
+        parameter_list,
+        doc.from_string(" -> "),
+        doc.from_string(return_annotation),
+        doc.from_string(" "),
+        body_doc,
+        separate_definition(rest),
+      ]),
+    ),
   ))
 }
 
@@ -3148,7 +3161,7 @@ pub fn function(
 /// 
 pub fn end_module() -> Module {
   use state <- Module
-  Ok(#(state, doc.empty))
+  Ok(#(state, Empty))
 }
 
 /// Generates a top-level constant from a constant expression, passing the name
@@ -3199,18 +3212,18 @@ pub fn constant(
   let #(state, annotation) = print_type(state, type_)
   Ok(#(
     state,
-    [
-      publicity_to_doc(publicity),
-      doc.from_string("const "),
-      doc.from_string(name),
-      doc.from_string(": "),
-      doc.from_string(annotation),
-      doc.from_string(" = "),
-      value.document,
-      doc.lines(2),
-      rest,
-    ]
-      |> doc.concat,
+    Definition(
+      doc.concat([
+        publicity_to_doc(publicity),
+        doc.from_string("const "),
+        doc.from_string(name),
+        doc.from_string(": "),
+        doc.from_string(annotation),
+        doc.from_string(" = "),
+        value.document,
+        separate_definition(rest),
+      ]),
+    ),
   ))
 }
 
@@ -3239,13 +3252,21 @@ pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
 
   Ok(#(
     state,
-    [
-      comment,
-      doc.line,
-      rest,
-    ]
-      |> doc.concat,
+    Definition(
+      doc.concat([
+        comment,
+        doc.line,
+        definition_document(rest),
+      ]),
+    ),
   ))
+}
+
+fn definition_document(definition: CompiledModule) -> Document {
+  case definition {
+    Empty -> doc.empty
+    Definition(document) -> document
+  }
 }
 
 fn print_type(state: State, type_: ConcreteType) -> #(State, String) {
@@ -3745,14 +3766,14 @@ pub fn custom_type(
   use <- bool.lazy_guard(custom_type.constructors == [], fn() {
     Ok(#(
       state,
-      [
-        doc.from_string("type "),
-        doc.from_string(custom_type.name),
-        parameters,
-        doc.lines(2),
-        rest,
-      ]
-        |> doc.concat,
+      Definition(
+        doc.concat([
+          doc.from_string("type "),
+          doc.from_string(custom_type.name),
+          parameters,
+          separate_definition(rest),
+        ]),
+      ),
     ))
   })
 
@@ -3814,19 +3835,19 @@ pub fn custom_type(
 
   Ok(#(
     state,
-    [
-      publicity_to_doc(publicity),
-      doc.from_string("type "),
-      doc.from_string(custom_type.name),
-      parameters,
-      doc.from_string(" {"),
-      constructors,
-      doc.line,
-      doc.from_string("}"),
-      doc.lines(2),
-      rest,
-    ]
-      |> doc.concat,
+    Definition(
+      doc.concat([
+        publicity_to_doc(publicity),
+        doc.from_string("type "),
+        doc.from_string(custom_type.name),
+        parameters,
+        doc.from_string(" {"),
+        constructors,
+        doc.line,
+        doc.from_string("}"),
+        separate_definition(rest),
+      ]),
+    ),
   ))
 }
 

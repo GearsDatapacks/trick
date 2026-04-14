@@ -11,4 +11,3 @@ pub fn main() -> List(Float) {
   [1.0, 2.0, ..empty]
 }
 
-

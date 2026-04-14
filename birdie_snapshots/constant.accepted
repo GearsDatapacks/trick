@@ -6,4 +6,3 @@ test_name: constant_test
 ---
 pub const pi: Float = 3.14
 
-

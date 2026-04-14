@@ -9,4 +9,3 @@ pub type Option(value) {
   None
 }
 
-

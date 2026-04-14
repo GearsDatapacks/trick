@@ -9,4 +9,3 @@ test_name: doc_comment_test
 @internal
 pub const pi: Float = 3.14
 
-

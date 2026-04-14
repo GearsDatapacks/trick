@@ -13,4 +13,3 @@ pub fn main() -> Bool {
   anything() || False
 }
 
-

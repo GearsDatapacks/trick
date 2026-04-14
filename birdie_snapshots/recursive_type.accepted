@@ -9,4 +9,3 @@ pub type List(element) {
   NonEmpty(head: element, tail: List(element))
 }
 
-

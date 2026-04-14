@@ -13,4 +13,3 @@ pub fn main() -> #(String, String) {
   pair("Hello")
 }
 
-
