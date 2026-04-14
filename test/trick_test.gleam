@@ -653,6 +653,80 @@ pub fn invalid_function_capture_test() {
   assert error == trick.InvalidCall(type_int)
 }
 
+pub fn function_capture_alt_test() {
+  let add =
+    trick.anonymous({
+      use a <- trick.parameter("a", trick.int_type())
+      use b <- trick.parameter("b", trick.int_type())
+      trick.add(a, b) |> trick.expression |> trick.function_body
+    })
+
+  {
+    use add <- trick.variable("add", add)
+    use add_one <- trick.variable(
+      "add_one",
+      trick.function_capture_alt(add, [
+        trick.CaptureHole,
+        trick.CaptureArgument(trick.int(1)),
+      ]),
+    )
+    trick.expression(trick.add(
+      trick.call(add_one, [trick.int(5)]),
+      trick.int(1),
+    ))
+  }
+  |> trick.block
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("function_capture_alt")
+}
+
+pub fn function_capture_alt_no_capture_test() {
+  let add =
+    trick.anonymous({
+      use a <- trick.parameter("a", trick.int_type())
+      use b <- trick.parameter("b", trick.int_type())
+      trick.add(a, b) |> trick.expression |> trick.function_body
+    })
+
+  let assert Error(trick.NoCaptureHole) =
+    {
+      use add <- trick.variable("add", add)
+
+      trick.expression(
+        trick.function_capture_alt(add, [
+          trick.CaptureArgument(trick.int(1)),
+          trick.CaptureArgument(trick.int(2)),
+        ]),
+      )
+    }
+    |> trick.block
+    |> trick.expression_to_string
+}
+
+pub fn function_capture_alt_duplicate_capture_test() {
+  let add =
+    trick.anonymous({
+      use a <- trick.parameter("a", trick.int_type())
+      use b <- trick.parameter("b", trick.int_type())
+      trick.add(a, b) |> trick.expression |> trick.function_body
+    })
+
+  let assert Error(trick.DuplicateCaptureHole) =
+    {
+      use add <- trick.variable("add", add)
+
+      trick.expression(
+        trick.function_capture_alt(add, [
+          trick.CaptureHole,
+          trick.CaptureHole,
+        ]),
+      )
+    }
+    |> trick.block
+    |> trick.expression_to_string
+}
+
 pub fn incorrect_number_of_arguments_capture_test() {
   let function =
     trick.anonymous({

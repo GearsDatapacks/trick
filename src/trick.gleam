@@ -123,6 +123,7 @@
 //// - [`call`](#call)
 ////   - [`Argument`](#Argument)
 ////   - [`function_capture`](#function_capture)
+////   - [`function_capture_alt`](#function_capture_alt)
 ////   - [`labelled_call`](#labelled_call)
 //// ### Types
 //// - [`Type`](#Type)
@@ -234,6 +235,12 @@ pub type Error {
   UnknownLabel(label: String, available_labels: List(String))
   /// Attempting to define parameters with duplicate labels
   DuplicateLabel(label: String)
+  /// No capture hole is provided to a [`function_capture_alt`](#function_capture_alt)
+  /// call
+  NoCaptureHole
+  /// More than one capture hole is provided to a
+  /// [`function_capture_alt`](#function_capture_alt) call
+  DuplicateCaptureHole
 }
 
 type Compiled {
@@ -2481,6 +2488,8 @@ fn call_doc(arguments: List(Compiled), function: Compiled) -> Document {
 /// Generates a function capture expression, receiving two lists of arguments.
 /// The function hole goes between the two lists.
 /// 
+/// See also: [`function_capture_alt`](#function_capture_alt) for an alternative API.
+/// 
 /// ### Examples
 /// 
 /// ```gleam
@@ -2525,9 +2534,9 @@ fn call_doc(arguments: List(Compiled), function: Compiled) -> Document {
 /// ```
 /// 
 pub fn function_capture(
-  function: Expression(a),
-  before_hole: List(Expression(a)),
-  after_hole: List(Expression(a)),
+  function: Expression(_),
+  before_hole: List(Expression(_)),
+  after_hole: List(Expression(_)),
 ) -> Expression(Variable) {
   use state <- Expression
   use #(state, function) <- result.try(function.compile(state))
@@ -2605,6 +2614,98 @@ pub fn function_capture(
         Compiled(capture_doc(function, before, after), type_, precedence_unit),
       ))
     }
+  }
+}
+
+/// An argument to a function capture.
+/// 
+pub type FunctionCaptureArgument {
+  CaptureArgument(value: Expression(Variable))
+  CaptureHole
+}
+
+/// An alternative experimental API to [`function_capture`](#function_capture),
+/// structured more like a regular call.
+/// 
+/// The downside to this approach is that the type system doesn't guarantee that
+/// there's exactly one type hole, so we need to report errors for that too.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use add_5_numbers <- trick.function("add_5_numbers", trick.Private, {
+///     use a <- trick.parameter("a", int_type())
+///     use b <- trick.parameter("b", int_type())
+///     use c <- trick.parameter("c", int_type())
+///     use d <- trick.parameter("d", int_type())
+///     use e <- trick.parameter("e", int_type())
+///     a
+///     |> trick.add(b)
+///     |> trick.add(c)
+///     |> trick.add(d)
+///     |> trick.add(e)
+///     |> trick.expression
+///     |> trick.function_body
+///   })
+/// 
+///   use main <- trick.function("main", trick.Public, trick.function_body(
+///     trick.expression(trick.function_capture_alt(add_5_numbers, [
+///       CaptureArgument(trick.int(1)),
+///       CaptureArgument(trick.int(2)),
+///       CaptureHole,
+///       CaptureArgument(trick.int(4)),
+///       CaptureArgument(trick.int(5)),
+///     ]))
+///   ))
+/// 
+///   trick.end_module()
+/// }
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// fn add_5_numbers(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int {
+///   a + b + c + d + e
+/// }
+/// 
+/// pub fn main() -> fn(Int) -> Int {
+///   add_5_numbers(1, 2, _, 4, 5)
+/// }
+/// ```
+/// 
+pub fn function_capture_alt(
+  function: Expression(a),
+  arguments: List(FunctionCaptureArgument),
+) -> Expression(Variable) {
+  use state <- Expression
+
+  use #(before_hole, after_hole) <- result.try(split_on_hole(
+    arguments,
+    [],
+    [],
+    False,
+  ))
+
+  function_capture(function, before_hole, after_hole).compile(state)
+}
+
+fn split_on_hole(
+  arguments: List(FunctionCaptureArgument),
+  before: List(Expression(_)),
+  after: List(Expression(_)),
+  found_hole: Bool,
+) -> Result(#(List(Expression(_)), List(Expression(_))), Error) {
+  case arguments {
+    [] if found_hole -> Ok(#(list.reverse(before), list.reverse(after)))
+    [] -> Error(NoCaptureHole)
+    [CaptureHole, ..] if found_hole -> Error(DuplicateCaptureHole)
+    [CaptureHole, ..arguments] -> split_on_hole(arguments, before, after, True)
+    [CaptureArgument(value:), ..arguments] if found_hole ->
+      split_on_hole(arguments, before, [value, ..after], found_hole)
+    [CaptureArgument(value:), ..arguments] ->
+      split_on_hole(arguments, [value, ..before], after, found_hole)
   }
 }
 

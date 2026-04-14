@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: function_capture_alt
+file: ./test/trick_test.gleam
+test_name: function_capture_alt_test
+---
+{
+  let add = fn(a: Int, b: Int) { a + b }
+  let add_one = add(_, 1)
+  add_one(5) + 1
+}

@@ -24,4 +24,3 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 - Check whether variable names are valid
 - Fix the API for generic types
 - Ensure types are correct if user accidentally shadows a variable
-- Improve function capture API
