@@ -310,6 +310,8 @@ type State {
     generic_variable_names: Dict(String, ConcreteType),
     type_variable_id: Int,
     module: String,
+    type_variable_number: Int,
+    used_type_variable_names: Set(String),
   )
 }
 
@@ -369,6 +371,7 @@ fn named_unbound(state: State, name: String) -> #(State, ConcreteType) {
     State(
       ..state,
       type_variable_names: dict.insert(state.type_variable_names, id, name),
+      used_type_variable_names: set.insert(state.used_type_variable_names, name),
       type_variable_id: id + 1,
     )
   #(state, type_)
@@ -381,6 +384,7 @@ fn named_generic(state: State, name: String) -> #(State, ConcreteType) {
     State(
       ..state,
       type_variable_names: dict.insert(state.type_variable_names, id, name),
+      used_type_variable_names: set.insert(state.used_type_variable_names, name),
       type_variable_id: id + 1,
     )
   #(state, type_)
@@ -811,6 +815,8 @@ fn new_state() -> State {
     generic_variable_names: dict.new(),
     type_variable_id: 0,
     module: "module",
+    type_variable_number: 0,
+    used_type_variable_names: set.new(),
   )
 }
 
@@ -2163,11 +2169,13 @@ pub fn anonymous(
   )
   use #(state, body) <- result.try(function.body.compile(state))
 
+  let #(state, parameters) =
+    list.map_fold(function.parameters, state, parameter_to_doc)
+
   let parameter_list =
     [
       doc.break("(", "("),
-      function.parameters
-        |> list.map(parameter_to_doc(state, _))
+      parameters
         |> doc.join(doc.break(", ", ",")),
     ]
     |> doc.concat
@@ -2336,22 +2344,32 @@ pub fn labelled_parameter(
   ))
 }
 
-fn parameter_to_doc(state: State, parameter: Parameter) -> Document {
+fn parameter_to_doc(state: State, parameter: Parameter) -> #(State, Document) {
   case parameter.label {
-    None ->
-      doc.concat([
-        doc.from_string(parameter.name),
-        doc.from_string(": "),
-        doc.from_string(print_type(state, parameter.type_)),
-      ])
-    Some(label) ->
-      doc.concat([
-        doc.from_string(label),
-        doc.from_string(" "),
-        doc.from_string(parameter.name),
-        doc.from_string(": "),
-        doc.from_string(print_type(state, parameter.type_)),
-      ])
+    None -> {
+      let #(state, type_) = print_type(state, parameter.type_)
+      #(
+        state,
+        doc.concat([
+          doc.from_string(parameter.name),
+          doc.from_string(": "),
+          doc.from_string(type_),
+        ]),
+      )
+    }
+    Some(label) -> {
+      let #(state, type_) = print_type(state, parameter.type_)
+      #(
+        state,
+        doc.concat([
+          doc.from_string(label),
+          doc.from_string(" "),
+          doc.from_string(parameter.name),
+          doc.from_string(": "),
+          doc.from_string(type_),
+        ]),
+      )
+    }
   }
 }
 
@@ -2804,11 +2822,13 @@ pub fn function(
     }),
   )
 
+  let #(state, parameters) =
+    list.map_fold(function.parameters, state, parameter_to_doc)
+
   let parameter_list =
     [
       doc.break("(", "("),
-      function.parameters
-        |> list.map(parameter_to_doc(state, _))
+      parameters
         |> doc.join(doc.break(", ", ",")),
     ]
     |> doc.concat
@@ -2863,6 +2883,8 @@ pub fn function(
 
   use #(state, rest) <- result.try(continue(function_name).compile(state))
 
+  let #(state, return_annotation) = print_type(state, return_type)
+
   Ok(#(
     state,
     [
@@ -2871,7 +2893,7 @@ pub fn function(
       doc.from_string(name),
       parameter_list,
       doc.from_string(" -> "),
-      doc.from_string(print_type(state, return_type)),
+      doc.from_string(return_annotation),
       doc.from_string(" "),
       body_doc,
       doc.lines(2),
@@ -2943,6 +2965,7 @@ pub fn constant(
 
   use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
+  let #(state, annotation) = print_type(state, type_)
   Ok(#(
     state,
     [
@@ -2950,7 +2973,7 @@ pub fn constant(
       doc.from_string("const "),
       doc.from_string(name),
       doc.from_string(": "),
-      doc.from_string(print_type(state, type_)),
+      doc.from_string(annotation),
       doc.from_string(" = "),
       value.document,
       doc.lines(2),
@@ -2994,29 +3017,63 @@ pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
   ))
 }
 
-fn print_type(state: State, type_: ConcreteType) -> String {
+fn print_type(state: State, type_: ConcreteType) -> #(State, String) {
   case unwrap_type(state, type_) {
     Custom(module: _, name:, generics:) ->
       case generics {
-        [] -> name
-        _ ->
-          name
-          <> "("
-          <> string.join(list.map(generics, print_type(state, _)), ", ")
-          <> ")"
+        [] -> #(state, name)
+        _ -> {
+          let #(state, generics) = list.map_fold(generics, state, print_type)
+          #(state, name <> "(" <> string.join(generics, ", ") <> ")")
+        }
       }
-    Function(parameters:, return:, field_map: _) ->
-      "fn("
-      <> string.join(list.map(parameters, print_type(state, _)), ", ")
-      <> ") -> "
-      <> print_type(state, return)
-    Tuple(elements:) ->
-      "#(" <> string.join(list.map(elements, print_type(state, _)), ", ") <> ")"
+    Function(parameters:, return:, field_map: _) -> {
+      let #(state, parameters) = list.map_fold(parameters, state, print_type)
+      let #(state, return) = print_type(state, return)
+      #(state, "fn(" <> string.join(parameters, ", ") <> ") -> " <> return)
+    }
+    Tuple(elements:) -> {
+      let #(state, elements) = list.map_fold(elements, state, print_type)
+      #(state, "#(" <> string.join(elements, ", ") <> ")")
+    }
     Unbound(id:) | Generic(id:) ->
       case dict.get(state.type_variable_names, id) {
-        Ok(name) -> name
-        Error(_) -> generate_type_variable_name(id)
+        Ok(name) -> #(state, name)
+        Error(_) -> {
+          let #(name, number) =
+            find_appropriate_type_variable_name(
+              state,
+              state.type_variable_number,
+            )
+          #(
+            State(
+              ..state,
+              type_variable_number: number,
+              type_variable_names: dict.insert(
+                state.type_variable_names,
+                id,
+                name,
+              ),
+              used_type_variable_names: set.insert(
+                state.used_type_variable_names,
+                name,
+              ),
+            ),
+            name,
+          )
+        }
       }
+  }
+}
+
+fn find_appropriate_type_variable_name(
+  state: State,
+  type_variable_number: Int,
+) -> #(String, Int) {
+  let possible_name = generate_type_variable_name(type_variable_number)
+  case set.contains(state.used_type_variable_names, possible_name) {
+    True -> find_appropriate_type_variable_name(state, type_variable_number + 1)
+    False -> #(possible_name, type_variable_number)
   }
 }
 
@@ -3473,16 +3530,18 @@ pub fn custom_type(
               case field.label {
                 None -> {
                   let #(state, type_) = field.type_.compile(state)
-                  #(state, doc.from_string(print_type(state, type_)))
+                  let #(state, annotation) = print_type(state, type_)
+                  #(state, doc.from_string(annotation))
                 }
                 Some(label) -> {
                   let #(state, type_) = field.type_.compile(state)
+                  let #(state, annotation) = print_type(state, type_)
                   #(
                     state,
                     [
                       doc.from_string(label),
                       doc.from_string(": "),
-                      doc.from_string(print_type(state, type_)),
+                      doc.from_string(annotation),
                     ]
                       |> doc.concat,
                   )
