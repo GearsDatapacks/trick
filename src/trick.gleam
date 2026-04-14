@@ -33,7 +33,7 @@
 //// }
 //// ```
 //// 
-//// The called functions more of less mimic the structure of the resulting code,
+//// The called functions more or less mimic the structure of the resulting code,
 //// with the exception for a few boilerplate functions needed to convert between
 //// types to appease the Gleam type system.
 //// 
