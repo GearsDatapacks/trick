@@ -1,4 +1,5 @@
 import birdie
+import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 import gleeunit
@@ -208,40 +209,50 @@ pub fn operator_precedence_test() {
     == "-#(1, 2.0).0"
 }
 
-const type_int = trick.Custom("gleam", "Int", [])
+fn type_int() {
+  trick.Custom("gleam", "Int", [], dict.new())
+}
 
-const type_float = trick.Custom("gleam", "Float", [])
+fn type_float() {
+  trick.Custom("gleam", "Float", [], dict.new())
+}
 
-const type_string = trick.Custom("gleam", "String", [])
+fn type_string() {
+  trick.Custom("gleam", "String", [], dict.new())
+}
 
-const type_bool = trick.Custom("gleam", "Bool", [])
+fn type_bool() {
+  trick.Custom("gleam", "Bool", [], dict.new())
+}
 
-const type_nil = trick.Custom("gleam", "Nil", [])
+fn type_nil() {
+  trick.Custom("gleam", "Nil", [], dict.new())
+}
 
 fn type_list(element: trick.ConcreteType) -> trick.ConcreteType {
-  trick.Custom("gleam", "List", [element])
+  trick.Custom("gleam", "List", [element], dict.new())
 }
 
 pub fn binary_operator_type_mismatch_test() {
   let assert Error(error) =
     trick.add(trick.int(10), trick.float(20.0))
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
 
   let assert Error(error) =
     trick.add_float(trick.string("Hello"), trick.int(12))
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_float, got: type_string)
+  assert error == trick.TypeMismatch(expected: type_float(), got: type_string())
 
   let assert Error(error) =
     trick.equal(trick.string("Hello"), trick.bool(True))
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_string, got: type_bool)
+  assert error == trick.TypeMismatch(expected: type_string(), got: type_bool())
 
   let assert Error(error) =
     trick.not_equal(trick.nil(), trick.int(23))
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_nil, got: type_int)
+  assert error == trick.TypeMismatch(expected: type_nil(), got: type_int())
 }
 
 pub fn unary_operator_test() {
@@ -264,12 +275,12 @@ pub fn unary_operator_type_mismatch_test() {
   let assert Error(error) =
     trick.negate_int(trick.float(20.0))
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
 
   let assert Error(error) =
     trick.negate_bool(trick.nil())
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_bool, got: type_nil)
+  assert error == trick.TypeMismatch(expected: type_bool(), got: type_nil())
 }
 
 pub fn list_test() {
@@ -298,7 +309,7 @@ pub fn list_type_mismatch_test() {
   let assert Error(error) =
     trick.list([trick.int(10), trick.int(20), trick.float(30.0)])
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
 }
 
 pub fn panic_no_message_test() {
@@ -418,7 +429,7 @@ pub fn unified_variable_cannot_be_changed_test() {
     }
     |> trick.block
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_string, got: type_int)
+  assert error == trick.TypeMismatch(expected: type_string(), got: type_int())
 }
 
 pub fn assert_test() {
@@ -505,7 +516,7 @@ pub fn tuple_access_error_test() {
     |> trick.list
     |> trick.tuple_index(2)
     |> trick.expression_to_string
-  assert error == trick.InvalidTupleAccess(type_: type_list(type_int))
+  assert error == trick.InvalidTupleAccess(type_: type_list(type_int()))
 }
 
 pub fn anonymous_function_test() {
@@ -574,7 +585,7 @@ pub fn invalid_call_test() {
     trick.int(10)
     |> trick.call([trick.float(10.0)])
     |> trick.expression_to_string
-  assert error == trick.InvalidCall(type_int)
+  assert error == trick.InvalidCall(type_int())
 }
 
 pub fn incorrect_number_of_arguments_test() {
@@ -608,7 +619,7 @@ pub fn incorrect_argument_type_test() {
     function
     |> trick.call([trick.float(1.0)])
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
 }
 
 pub fn single_expression_block_test() {
@@ -650,7 +661,7 @@ pub fn invalid_function_capture_test() {
     trick.int(10)
     |> trick.function_capture([], [])
     |> trick.expression_to_string
-  assert error == trick.InvalidCall(type_int)
+  assert error == trick.InvalidCall(type_int())
 }
 
 pub fn function_capture_alt_test() {
@@ -764,7 +775,7 @@ pub fn incorrect_argument_type_capture_test() {
     function
     |> trick.function_capture([trick.int(1)], [trick.float(2.0)])
     |> trick.expression_to_string
-  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
 }
 
 pub fn function_test() {
@@ -946,7 +957,7 @@ pub fn recursive_function_has_correct_type2_test() {
     }
     |> trick.to_string
 
-  assert error == trick.TypeMismatch(expected: type_float, got: type_int)
+  assert error == trick.TypeMismatch(expected: type_float(), got: type_int())
 }
 
 pub fn constant_test() {
@@ -1027,7 +1038,7 @@ pub fn constant_type_checks_correctly_test() {
     }
     |> trick.to_string
 
-  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
 }
 
 pub fn type_annotation_printing_test() {
@@ -1198,7 +1209,7 @@ pub fn labels_affect_ordering_test() {
       trick.end_module()
     })
 
-  assert error == trick.TypeMismatch(expected: type_int, got: type_bool)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_bool())
 }
 
 pub fn incorrect_arity_labelled_call_test() {
@@ -1515,7 +1526,7 @@ pub fn generic_cannot_be_two_types_at_once() {
       trick.end_module()
     }
     |> trick.to_string
-  assert error == trick.TypeMismatch(expected: type_int, got: type_string)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_string())
 }
 
 pub fn list_prepend_test() {
@@ -1543,7 +1554,7 @@ pub fn list_prepend_not_a_list_test() {
     |> trick.prepend([trick.int(0), trick.int(1)])
     |> trick.expression_to_string
 
-  assert error == trick.InvalidListPrepend(type_int)
+  assert error == trick.InvalidListPrepend(type_int())
 }
 
 pub fn list_prepend_wrong_type_test() {
@@ -1552,7 +1563,7 @@ pub fn list_prepend_wrong_type_test() {
     |> trick.prepend([trick.float(0.0), trick.float(1.0)])
     |> trick.expression_to_string
 
-  assert error == trick.TypeMismatch(expected: type_int, got: type_float)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
 }
 
 pub fn generic_function_called_multiple_times_with_different_types_test() {
@@ -1603,7 +1614,7 @@ pub fn generic_function_called_with_incompatible_types_test() {
     }
     |> trick.to_string
 
-  assert error == trick.TypeMismatch(expected: type_int, got: type_string)
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_string())
 }
 
 pub fn generic_function_with_unrelated_generics_test() {
@@ -1665,7 +1676,8 @@ pub fn generic_parameter_cannot_be_used_as_any_test() {
     }
     |> trick.to_string
 
-  assert error == trick.TypeMismatch(expected: type_int, got: trick.Generic(1))
+  assert error
+    == trick.TypeMismatch(expected: type_int(), got: trick.Generic(1))
 }
 
 pub fn generic_constant_used_multiple_times_test() {
@@ -1904,4 +1916,126 @@ pub fn bad_casing_test() {
     }
     |> trick.to_string
   assert error == trick.InvalidName("_Parameter", trick.SnakeCase)
+}
+
+pub fn field_access_test() {
+  {
+    use _ <- trick.custom_type("Wibble", trick.Public)
+    use wibble <- trick.constructor("Wibble", [
+      trick.Field(Some("wibble"), trick.int_type()),
+      trick.Field(Some("wobble"), trick.float_type()),
+    ])
+    use _ <- trick.constructor("Wobble", [
+      trick.Field(None, trick.int_type()),
+      trick.Field(Some("wobble"), trick.float_type()),
+    ])
+    use <- trick.end_custom_type
+
+    use _ <- trick.function(
+      "main",
+      trick.Public,
+      trick.function_body({
+        use wibble <- trick.variable(
+          "wibble",
+          trick.call(wibble, [trick.int(1), trick.float(2.0)]),
+        )
+        wibble
+        |> trick.field_access("wobble")
+        |> trick.add_float(trick.float(3.0))
+        |> trick.expression
+      }),
+    )
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("field_access")
+}
+
+pub fn nested_field_access_test() {
+  {
+    use wibble_type <- trick.custom_type("Wibble", trick.Public)
+    use wibble <- trick.constructor("Wibble", [
+      trick.Field(Some("wibble"), wibble_type),
+    ])
+    use <- trick.end_custom_type
+
+    use _ <- trick.function(
+      "main",
+      trick.Public,
+      trick.function_body({
+        use wibble <- trick.variable(
+          "wibble",
+          trick.call(wibble, [trick.todo_(None)]),
+        )
+        wibble
+        |> trick.field_access("wibble")
+        |> trick.field_access("wibble")
+        |> trick.field_access("wibble")
+        |> trick.field_access("wibble")
+        |> trick.expression
+      }),
+    )
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("nested_field_access")
+}
+
+pub fn invalid_field_access_test() {
+  let assert Error(error) =
+    trick.tuple([trick.int(1), trick.float(2.0)])
+    |> trick.field_access("to_string")
+    |> trick.expression_to_string
+
+  assert error
+    == trick.InvalidFieldAccess(trick.Tuple([type_int(), type_float()]))
+}
+
+pub fn wrong_label_field_access_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Public)
+      use wibble <- trick.constructor("Wibble", [
+        trick.Field(Some("wibble"), trick.int_type()),
+        trick.Field(Some("wobble"), trick.float_type()),
+      ])
+      use _ <- trick.constructor("Wobble", [
+        trick.Field(None, trick.int_type()),
+        trick.Field(Some("wobble"), trick.float_type()),
+      ])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable(
+            "wibble",
+            trick.call(wibble, [trick.int(1), trick.float(2.0)]),
+          )
+          wibble
+          |> trick.field_access("wibble")
+          |> trick.add_float(trick.float(3.0))
+          |> trick.expression
+        }),
+      )
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.TypeDoesNotHaveField(
+      trick.Custom(
+        module: "module",
+        name: "Wibble",
+        generics: [],
+        shared_fields: dict.from_list([#("wobble", type_float())]),
+      ),
+      "wibble",
+    )
 }

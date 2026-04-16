@@ -1,0 +1,15 @@
+---
+version: 1.5.4
+title: nested_field_access
+file: ./test/trick_test.gleam
+test_name: nested_field_access_test
+---
+pub type Wibble {
+  Wibble(wibble: Wibble)
+}
+
+pub fn main() -> Wibble {
+  let wibble = Wibble(todo)
+  wibble.wibble.wibble.wibble.wibble
+}
+

@@ -255,8 +255,15 @@ pub type Error {
   DuplicateCaptureHole
   /// The name of a value does not match what is expected.
   InvalidName(name: String, expected: NameCase)
+  /// Attempting field access on a value which is not a custom type.
+  InvalidFieldAccess(type_: ConcreteType)
+  /// Attempting to access a field on a custom type which does not have said
+  /// field.
+  TypeDoesNotHaveField(type_: ConcreteType, field: String)
 }
 
+/// The expected case of the name for a definition.
+/// 
 pub type NameCase {
   SnakeCase
   PascalCase
@@ -495,7 +502,12 @@ pub opaque type Type {
 /// type-checking and contains the full information about each type.
 /// 
 pub type ConcreteType {
-  Custom(module: String, name: String, generics: List(ConcreteType))
+  Custom(
+    module: String,
+    name: String,
+    generics: List(ConcreteType),
+    shared_fields: Dict(String, ConcreteType),
+  )
   Generic(id: Int)
   Unbound(id: Int)
   Tuple(elements: List(ConcreteType))
@@ -524,15 +536,25 @@ type State {
   )
 }
 
-const type_int: ConcreteType = Custom("gleam", "Int", [])
+fn type_int() -> ConcreteType {
+  Custom("gleam", "Int", [], dict.new())
+}
 
-const type_float: ConcreteType = Custom("gleam", "Float", [])
+fn type_float() -> ConcreteType {
+  Custom("gleam", "Float", [], dict.new())
+}
 
-const type_string: ConcreteType = Custom("gleam", "String", [])
+fn type_string() -> ConcreteType {
+  Custom("gleam", "String", [], dict.new())
+}
 
-const type_bool: ConcreteType = Custom("gleam", "Bool", [])
+fn type_bool() -> ConcreteType {
+  Custom("gleam", "Bool", [], dict.new())
+}
 
-const type_nil: ConcreteType = Custom("gleam", "Nil", [])
+fn type_nil() -> ConcreteType {
+  Custom("gleam", "Nil", [], dict.new())
+}
 
 /// The publicity of a top-level definition.
 /// 
@@ -556,7 +578,7 @@ fn publicity_to_doc(publicity: Publicity) -> Document {
 }
 
 fn type_list(element: ConcreteType) -> ConcreteType {
-  Custom("gleam", "List", [element])
+  Custom("gleam", "List", [element], dict.new())
 }
 
 fn next_unbound(state: State) -> #(State, ConcreteType) {
@@ -663,8 +685,8 @@ fn unify(
         )
       Ok(#(state, other))
     }
-    Custom(module: m1, name: n1, generics: g1),
-      Custom(module: m2, name: n2, generics: g2)
+    Custom(module: m1, name: n1, generics: g1, shared_fields:),
+      Custom(module: m2, name: n2, generics: g2, shared_fields: _)
       if m1 == m2 && n1 == n2
     -> {
       case list.strict_zip(g1, g2) {
@@ -682,7 +704,7 @@ fn unify(
           case generics {
             Error(error) -> Error(error)
             Ok(#(state, generics)) ->
-              Ok(#(state, Custom(m1, n1, list.reverse(generics))))
+              Ok(#(state, Custom(m1, n1, list.reverse(generics), shared_fields)))
           }
         }
       }
@@ -758,8 +780,8 @@ fn do_instantiate(
   type_: ConcreteType,
   instantiated: Dict(Int, ConcreteType),
 ) -> #(State, ConcreteType, Dict(Int, ConcreteType)) {
-  case type_ {
-    Custom(module:, name:, generics:) -> {
+  case unwrap_type(state, type_) {
+    Custom(module:, name:, generics:, shared_fields:) -> {
       let #(#(state, instantiated), generics) =
         list.map_fold(generics, #(state, instantiated), fn(acc, generic) {
           let #(state, instantiated) = acc
@@ -767,7 +789,7 @@ fn do_instantiate(
             do_instantiate(state, generic, instantiated)
           #(#(state, instantiated), generic)
         })
-      #(state, Custom(module:, name:, generics:), instantiated)
+      #(state, Custom(module:, name:, generics:, shared_fields:), instantiated)
     }
     Generic(id) ->
       case dict.get(instantiated, id) {
@@ -821,7 +843,7 @@ fn do_generalise(
   generalised: Dict(Int, ConcreteType),
 ) -> #(State, ConcreteType, Dict(Int, ConcreteType)) {
   case unwrap_type(state, type_) {
-    Custom(module:, name:, generics:) -> {
+    Custom(module:, name:, generics:, shared_fields:) -> {
       let #(#(state, generalised), generics) =
         list.map_fold(generics, #(state, generalised), fn(acc, generic) {
           let #(state, generalised) = acc
@@ -829,7 +851,7 @@ fn do_generalise(
             do_generalise(state, generic, generalised)
           #(#(state, generalised), generic)
         })
-      #(state, Custom(module:, name:, generics:), generalised)
+      #(state, Custom(module:, name:, generics:, shared_fields:), generalised)
     }
     Generic(..) -> #(state, type_, generalised)
     Unbound(id:) -> {
@@ -879,43 +901,43 @@ fn instantiated(
 /// Returns the `Int` type.
 /// 
 pub fn int_type() -> Type {
-  concrete(type_int)
+  concrete(type_int())
 }
 
 /// Returns the `Float` type.
 /// 
 pub fn float_type() -> Type {
-  concrete(type_float)
+  concrete(type_float())
 }
 
 /// Returns the `String` type.
 /// 
 pub fn string_type() -> Type {
-  concrete(type_string)
+  concrete(type_string())
 }
 
 /// Returns the `Bool` type.
 /// 
 pub fn bool_type() -> Type {
-  concrete(type_bool)
+  concrete(type_bool())
 }
 
 /// Returns the `Nil` type.
 /// 
 pub fn nil_type() -> Type {
-  concrete(type_nil)
+  concrete(type_nil())
 }
 
 /// Returns the `BitArray` type.
 /// 
 pub fn bit_array_type() -> Type {
-  concrete(Custom("gleam", "BitArray", []))
+  concrete(Custom("gleam", "BitArray", [], dict.new()))
 }
 
 /// Returns the `UtfCodepoint` type.
 /// 
 pub fn utf_codepoint_type() -> Type {
-  concrete(Custom("gleam", "UtfCodepoint", []))
+  concrete(Custom("gleam", "UtfCodepoint", [], dict.new()))
 }
 
 /// Returns a `List` type with the specified element type.
@@ -1070,7 +1092,7 @@ pub fn int(value: Int) -> Expression(a) {
   value
   |> int.to_string
   |> doc.from_string
-  |> Compiled(type_int, precedence_unit)
+  |> Compiled(type_int(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1088,7 +1110,7 @@ pub fn int_base2(value: Int) -> Expression(a) {
   |> int.to_base2
   |> doc.from_string
   |> doc.prepend(doc.from_string("0b"))
-  |> Compiled(type_int, precedence_unit)
+  |> Compiled(type_int(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1106,7 +1128,7 @@ pub fn int_base8(value: Int) -> Expression(a) {
   |> int.to_base8
   |> doc.from_string
   |> doc.prepend(doc.from_string("0o"))
-  |> Compiled(type_int, precedence_unit)
+  |> Compiled(type_int(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1124,7 +1146,7 @@ pub fn int_base16(value: Int) -> Expression(a) {
   |> int.to_base16
   |> doc.from_string
   |> doc.prepend(doc.from_string("0x"))
-  |> Compiled(type_int, precedence_unit)
+  |> Compiled(type_int(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1141,7 +1163,7 @@ pub fn float(value: Float) -> Expression(a) {
   value
   |> float.to_string
   |> doc.from_string
-  |> Compiled(type_float, precedence_unit)
+  |> Compiled(type_float(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1158,7 +1180,7 @@ pub fn string(value: String) -> Expression(a) {
   value
   |> escape_string_literal
   |> doc.from_string
-  |> Compiled(type_string, precedence_unit)
+  |> Compiled(type_string(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1175,7 +1197,7 @@ pub fn bool(value: Bool) -> Expression(a) {
   value
   |> bool.to_string
   |> doc.from_string
-  |> Compiled(type_bool, precedence_unit)
+  |> Compiled(type_bool(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1191,7 +1213,7 @@ pub fn bool(value: Bool) -> Expression(a) {
 pub fn nil() -> Expression(a) {
   "Nil"
   |> doc.from_string
-  |> Compiled(type_nil, precedence_unit)
+  |> Compiled(type_nil(), precedence_unit)
   |> doc_to_expression
 }
 
@@ -1256,7 +1278,7 @@ fn binary_operator(
 /// ```
 /// 
 pub fn add(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
-  binary_operator(left, "+", right, type_int, type_int, precedence_add)
+  binary_operator(left, "+", right, type_int(), type_int(), precedence_add)
 }
 
 /// Generates a `+.` operation.
@@ -1273,7 +1295,7 @@ pub fn add_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "+.", right, type_float, type_float, precedence_add)
+  binary_operator(left, "+.", right, type_float(), type_float(), precedence_add)
 }
 
 /// Generates a `-` operation.
@@ -1289,7 +1311,7 @@ pub fn subtract(
   from left: Expression(_),
   subtract right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "-", right, type_int, type_int, precedence_add)
+  binary_operator(left, "-", right, type_int(), type_int(), precedence_add)
 }
 
 /// Generates a `-.` operation.
@@ -1306,7 +1328,7 @@ pub fn subtract_float(
   from left: Expression(_),
   subtract right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "-.", right, type_float, type_float, precedence_add)
+  binary_operator(left, "-.", right, type_float(), type_float(), precedence_add)
 }
 
 /// Generates a `*` operation.
@@ -1322,7 +1344,7 @@ pub fn multiply(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "*", right, type_int, type_int, precedence_multiply)
+  binary_operator(left, "*", right, type_int(), type_int(), precedence_multiply)
 }
 
 /// Generates a `*.` operation.
@@ -1343,8 +1365,8 @@ pub fn multiply_float(
     left,
     "*.",
     right,
-    type_float,
-    type_float,
+    type_float(),
+    type_float(),
     precedence_multiply,
   )
 }
@@ -1362,7 +1384,7 @@ pub fn divide(
   divide left: Expression(_),
   by right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "/", right, type_int, type_int, precedence_multiply)
+  binary_operator(left, "/", right, type_int(), type_int(), precedence_multiply)
 }
 
 /// Generates a `/.` operation.
@@ -1383,8 +1405,8 @@ pub fn divide_float(
     left,
     "/.",
     right,
-    type_float,
-    type_float,
+    type_float(),
+    type_float(),
     precedence_multiply,
   )
 }
@@ -1402,7 +1424,7 @@ pub fn remainder(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "%", right, type_int, type_int, precedence_multiply)
+  binary_operator(left, "%", right, type_int(), type_int(), precedence_multiply)
 }
 
 /// Generates a `<>` operation.
@@ -1420,8 +1442,8 @@ pub fn concatenate(left: Expression(a), right: Expression(a)) -> Expression(a) {
     left,
     "<>",
     right,
-    type_string,
-    type_string,
+    type_string(),
+    type_string(),
     precedence_concatenate,
   )
 }
@@ -1437,7 +1459,7 @@ pub fn concatenate(left: Expression(a), right: Expression(a)) -> Expression(a) {
 /// ```
 /// 
 pub fn and(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
-  binary_operator(left, "&&", right, type_bool, type_bool, precedence_and)
+  binary_operator(left, "&&", right, type_bool(), type_bool(), precedence_and)
 }
 
 /// Generates a `||` operation.
@@ -1451,7 +1473,7 @@ pub fn and(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
 /// ```
 /// 
 pub fn or(left: Expression(_), right: Expression(_)) -> Expression(Variable) {
-  binary_operator(left, "||", right, type_bool, type_bool, precedence_or)
+  binary_operator(left, "||", right, type_bool(), type_bool(), precedence_or)
 }
 
 /// Generates a `==` operation. The two values must be of the same type.
@@ -1481,7 +1503,7 @@ pub fn equal(
 ) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
-  binary_operator(left, "==", right, type_, type_bool, precedence_equality).compile(
+  binary_operator(left, "==", right, type_, type_bool(), precedence_equality).compile(
     state,
   )
 }
@@ -1513,7 +1535,7 @@ pub fn not_equal(
 ) -> Expression(Variable) {
   use state <- Expression
   let #(state, type_) = next_unbound(state)
-  binary_operator(left, "!=", right, type_, type_bool, precedence_equality).compile(
+  binary_operator(left, "!=", right, type_, type_bool(), precedence_equality).compile(
     state,
   )
 }
@@ -1531,7 +1553,7 @@ pub fn less_than(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<", right, type_int, type_bool, precedence_compare)
+  binary_operator(left, "<", right, type_int(), type_bool(), precedence_compare)
 }
 
 /// Generates a `<.` operation.
@@ -1548,7 +1570,14 @@ pub fn less_than_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<.", right, type_float, type_bool, precedence_compare)
+  binary_operator(
+    left,
+    "<.",
+    right,
+    type_float(),
+    type_bool(),
+    precedence_compare,
+  )
 }
 
 /// Generates a `<=` operation.
@@ -1565,7 +1594,14 @@ pub fn less_than_or_equal(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<=", right, type_int, type_bool, precedence_compare)
+  binary_operator(
+    left,
+    "<=",
+    right,
+    type_int(),
+    type_bool(),
+    precedence_compare,
+  )
 }
 
 /// Generates a `<=.` operation.
@@ -1582,7 +1618,14 @@ pub fn less_than_or_equal_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, "<=.", right, type_float, type_bool, precedence_compare)
+  binary_operator(
+    left,
+    "<=.",
+    right,
+    type_float(),
+    type_bool(),
+    precedence_compare,
+  )
 }
 
 /// Generates a `>` operation.
@@ -1599,7 +1642,7 @@ pub fn greater_than(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">", right, type_int, type_bool, precedence_compare)
+  binary_operator(left, ">", right, type_int(), type_bool(), precedence_compare)
 }
 
 /// Generates a `>.` operation.
@@ -1616,7 +1659,14 @@ pub fn greater_than_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">.", right, type_float, type_bool, precedence_compare)
+  binary_operator(
+    left,
+    ">.",
+    right,
+    type_float(),
+    type_bool(),
+    precedence_compare,
+  )
 }
 
 /// Generates a `>=` operation.
@@ -1633,7 +1683,14 @@ pub fn greater_than_or_equal(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">=", right, type_int, type_bool, precedence_compare)
+  binary_operator(
+    left,
+    ">=",
+    right,
+    type_int(),
+    type_bool(),
+    precedence_compare,
+  )
 }
 
 /// Generates a `>=.` operation.
@@ -1650,7 +1707,14 @@ pub fn greater_than_or_equal_float(
   left: Expression(_),
   right: Expression(_),
 ) -> Expression(Variable) {
-  binary_operator(left, ">=.", right, type_float, type_bool, precedence_compare)
+  binary_operator(
+    left,
+    ">=.",
+    right,
+    type_float(),
+    type_bool(),
+    precedence_compare,
+  )
 }
 
 fn unary_operator(
@@ -1686,7 +1750,7 @@ fn unary_operator(
 /// ```
 /// 
 pub fn negate_int(value: Expression(a)) -> Expression(Variable) {
-  unary_operator("-", value, type_int)
+  unary_operator("-", value, type_int())
 }
 
 /// Generates a unary `!` operation.
@@ -1700,7 +1764,7 @@ pub fn negate_int(value: Expression(a)) -> Expression(Variable) {
 /// ```
 /// 
 pub fn negate_bool(value: Expression(a)) -> Expression(Variable) {
-  unary_operator("!", value, type_bool)
+  unary_operator("!", value, type_bool())
 }
 
 /// Generates a list of values. The values must all be of the same type.
@@ -1788,7 +1852,7 @@ pub fn panic_(message: Option(Expression(a))) -> Expression(Variable) {
       Ok(#(state, Compiled(doc.from_string("panic"), type_, precedence_unit)))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
-      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string()))
       Ok(#(
         state,
         Compiled(
@@ -1832,7 +1896,7 @@ pub fn todo_(message: Option(Expression(a))) -> Expression(Variable) {
       Ok(#(state, Compiled(doc.from_string("todo"), type_, precedence_unit)))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
-      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string()))
       Ok(#(
         state,
         Compiled(
@@ -1883,7 +1947,7 @@ pub fn echo_(
     None -> Ok(#(state, Compiled(echo_, value.type_, precedence_unit)))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
-      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string()))
       Ok(#(
         state,
         Compiled(
@@ -2170,22 +2234,25 @@ pub fn assert_(
 ) -> Statement {
   use state <- Statement
   use #(state, condition) <- result.try(condition.compile(state))
-  use #(state, _) <- result.try(unify(state, condition.type_, type_bool))
+  use #(state, _) <- result.try(unify(state, condition.type_, type_bool()))
 
   let assert_ = doc.prepend(doc.from_string("assert "), to: condition.document)
 
   case message {
     None ->
-      Ok(#(state, Compiled(doc.force_break(assert_), type_nil, precedence_unit)))
+      Ok(#(
+        state,
+        Compiled(doc.force_break(assert_), type_nil(), precedence_unit),
+      ))
     Some(message) -> {
       use #(state, message) <- result.try(message.compile(state))
-      use #(state, _) <- result.try(unify(state, message.type_, type_string))
+      use #(state, _) <- result.try(unify(state, message.type_, type_string()))
       Ok(#(
         state,
         Compiled(
           add_message(assert_, maybe_wrap(message, precedence_unit))
             |> doc.force_break,
-          type_nil,
+          type_nil(),
           precedence_unit,
         ),
       ))
@@ -2318,7 +2385,8 @@ pub fn prepend(
   use state <- Expression
   use #(state, list) <- result.try(list.compile(state))
   use element_type <- result.try(case unwrap_type(state, list.type_) {
-    Custom(module: "gleam", name: "List", generics: [type_]) -> Ok(type_)
+    Custom(module: "gleam", name: "List", generics: [type_], shared_fields: _) ->
+      Ok(type_)
     Custom(..) as type_
     | Generic(..) as type_
     | Unbound(..) as type_
@@ -3271,7 +3339,7 @@ fn definition_document(definition: CompiledModule) -> Document {
 
 fn print_type(state: State, type_: ConcreteType) -> #(State, String) {
   case unwrap_type(state, type_) {
-    Custom(module: _, name:, generics:) ->
+    Custom(module: _, name:, generics:, shared_fields: _) ->
       case generics {
         [] -> #(state, name)
         _ -> {
@@ -3678,27 +3746,27 @@ type CustomTypeInfo {
   )
 }
 
-type CustomTypeType {
-  InProgress(ConcreteType)
-  Finished(ConcreteType)
-}
-
 type CustomTypeHead {
   CustomTypeHead(
     name: String,
     parameters: List(#(String, ConcreteType)),
-    type_: CustomTypeType,
+    type_: ConcreteType,
+    constructors: List(Constructor),
   )
 }
 
 type Constructor {
-  Constructor(name: String, fields: List(Field))
+  Constructor(name: String, fields: List(CompiledField))
 }
 
 /// The field of a custom type variant.
 /// 
 pub type Field {
   Field(label: Option(String), type_: Type)
+}
+
+type CompiledField {
+  CompiledField(label: Option(String), type_: ConcreteType)
 }
 
 /// Begins a custom type declaration, passing the type to the continuing function
@@ -3742,7 +3810,8 @@ pub fn custom_type(
   use _ <- result.try(check_name_case(name, PascalCase))
   let #(state, unbound) = next_unbound(state)
 
-  let info = CustomTypeHead(name, parameters: [], type_: InProgress(unbound))
+  let info =
+    CustomTypeHead(name, parameters: [], type_: unbound, constructors: [])
 
   let custom_type = continue(concrete(unbound))
   use #(state, custom_type) <- result.try(custom_type.compile(state, info))
@@ -3777,22 +3846,20 @@ pub fn custom_type(
     ))
   })
 
-  use #(state, constructors) <- result.try(
-    try_map_fold(custom_type.constructors, state, fn(state, constructor) {
+  let #(state, constructors) =
+    list.map_fold(custom_type.constructors, state, fn(state, constructor) {
       case constructor.fields {
-        [] -> Ok(#(state, doc.from_string(constructor.name)))
+        [] -> #(state, doc.from_string(constructor.name))
         _ -> {
-          use #(state, fields) <- result.map(
-            try_map_fold(constructor.fields, state, fn(state, field) {
+          let #(state, fields) =
+            list.map_fold(constructor.fields, state, fn(state, field) {
               case field.label {
                 None -> {
-                  use #(state, type_) <- result.map(field.type_.compile(state))
-                  let #(state, annotation) = print_type(state, type_)
+                  let #(state, annotation) = print_type(state, field.type_)
                   #(state, doc.from_string(annotation))
                 }
                 Some(label) -> {
-                  use #(state, type_) <- result.map(field.type_.compile(state))
-                  let #(state, annotation) = print_type(state, type_)
+                  let #(state, annotation) = print_type(state, field.type_)
                   #(
                     state,
                     [
@@ -3804,8 +3871,8 @@ pub fn custom_type(
                   )
                 }
               }
-            }),
-          )
+            })
+
           #(
             state,
             [
@@ -3823,8 +3890,7 @@ pub fn custom_type(
           )
         }
       }
-    }),
-  )
+    })
 
   let constructors =
     constructors
@@ -3908,14 +3974,12 @@ pub fn constructor(
     try_map_fold(fields, state, fn(state, field) { field.type_.compile(state) }),
   )
 
-  use #(state, type_) <- result.try(ensure_complete(state, info))
-
   let constructor_type = case fields {
-    [] -> type_
+    [] -> info.type_
     _ ->
       Function(
         parameters: parameter_types,
-        return: type_,
+        return: info.type_,
         field_map: Some(field_map),
       )
   }
@@ -3924,9 +3988,23 @@ pub fn constructor(
     instantiated(doc.from_string(name), constructor_type, precedence_unit)
 
   let custom_type = continue(expression)
+
+  use #(state, fields) <- result.try(
+    try_map_fold(fields, state, fn(state, field) {
+      case field.type_.compile(state) {
+        Ok(#(state, type_)) ->
+          Ok(#(state, CompiledField(label: field.label, type_:)))
+        Error(error) -> Error(error)
+      }
+    }),
+  )
+
   use #(state, info) <- result.try(custom_type.compile(
     state,
-    CustomTypeHead(..info, type_: Finished(type_)),
+    CustomTypeHead(..info, constructors: [
+      Constructor(name:, fields:),
+      ..info.constructors
+    ]),
   ))
 
   Ok(#(
@@ -3936,27 +4014,6 @@ pub fn constructor(
       ..info.constructors
     ]),
   ))
-}
-
-fn ensure_complete(
-  state: State,
-  info: CustomTypeHead,
-) -> Result(#(State, ConcreteType), Error) {
-  case info.type_ {
-    InProgress(unbound) -> {
-      let type_ =
-        Custom(
-          module: state.module,
-          name: info.name,
-          generics: list.map(info.parameters, pair.second),
-        )
-      case unify(state, unbound, with: type_) {
-        Ok(#(state, _)) -> Ok(#(state, type_))
-        Error(error) -> Error(error)
-      }
-    }
-    Finished(type_) -> Ok(#(state, type_))
-  }
 }
 
 fn concrete(type_: ConcreteType) -> Type {
@@ -4043,7 +4100,14 @@ pub fn type_parameter(
 pub fn end_custom_type(continue: fn() -> Module) -> CustomType(a) {
   use state, info <- CustomType
 
-  use #(state, type_) <- result.try(ensure_complete(state, info))
+  let type_ =
+    Custom(
+      module: state.module,
+      name: info.name,
+      generics: list.map(info.parameters, pair.second),
+      shared_fields: find_shared_fields(state, info.constructors),
+    )
+  use #(state, _) <- result.try(unify(state, info.type_, with: type_))
 
   let rest = continue()
 
@@ -4057,4 +4121,186 @@ pub fn end_custom_type(continue: fn() -> Module) -> CustomType(a) {
       rest:,
     ),
   ))
+}
+
+fn find_shared_fields(
+  state,
+  constructors: List(Constructor),
+) -> Dict(String, ConcreteType) {
+  case constructors {
+    [] -> dict.new()
+    [constructor] ->
+      list.fold(constructor.fields, dict.new(), fn(fields, field) {
+        case field.label {
+          None -> fields
+          Some(label) -> dict.insert(fields, label, field.type_)
+        }
+      })
+    [first, ..rest] ->
+      find_shared_fields_loop(
+        state,
+        rest,
+        list.index_fold(first.fields, dict.new(), fn(fields, field, index) {
+          case field.label {
+            None -> fields
+            Some(label) -> dict.insert(fields, label, #(index, field.type_))
+          }
+        }),
+      )
+  }
+}
+
+fn map_or(result: Result(a, e), or: b, f: fn(a) -> b) -> b {
+  case result {
+    Ok(value) -> f(value)
+    Error(_) -> or
+  }
+}
+
+fn option_map_or(option: Option(a), or: b, f: fn(a) -> b) -> b {
+  case option {
+    Some(value) -> f(value)
+    None -> or
+  }
+}
+
+fn find_shared_fields_loop(
+  state: State,
+  constructors: List(Constructor),
+  fields: Dict(String, #(Int, ConcreteType)),
+) -> Dict(String, ConcreteType) {
+  case constructors {
+    [] -> dict.map_values(fields, fn(_, pair) { pair.1 })
+    [first, ..rest] ->
+      list.index_fold(first.fields, dict.new(), fn(shared, field, index) {
+        use label <- option_map_or(field.label, shared)
+        use #(shared_index, shared_type) <- map_or(
+          dict.get(fields, label),
+          shared,
+        )
+        case
+          index == shared_index && same_type(state, shared_type, field.type_)
+        {
+          True -> dict.insert(shared, label, #(shared_index, shared_type))
+          False -> shared
+        }
+      })
+      |> find_shared_fields_loop(state, rest, _)
+  }
+}
+
+fn same_type(state: State, a: ConcreteType, b: ConcreteType) -> Bool {
+  let a = unwrap_type(state, a)
+  let b = unwrap_type(state, b)
+  case a, b {
+    Custom(module: m1, name: n1, generics: g1, shared_fields: _),
+      Custom(module: m2, name: n2, generics: g2, shared_fields: _)
+    ->
+      m1 == m2
+      && n1 == n2
+      && case list.strict_zip(g1, g2) {
+        Error(_) -> False
+        Ok(zipped) ->
+          list.all(zipped, fn(pair) { same_type(state, pair.0, pair.1) })
+      }
+    Generic(id: id1), Generic(id: id2) | Unbound(id: id1), Unbound(id: id2) ->
+      id1 == id2
+    Tuple(elements: e1), Tuple(elements: e2) ->
+      case list.strict_zip(e1, e2) {
+        Error(_) -> False
+        Ok(zipped) ->
+          list.all(zipped, fn(pair) { same_type(state, pair.0, pair.1) })
+      }
+    Function(parameters: p1, return: r1, field_map: _),
+      Function(parameters: p2, return: r2, field_map: _)
+    ->
+      same_type(state, r1, r2)
+      && case list.strict_zip(p1, p2) {
+        Error(_) -> False
+        Ok(zipped) ->
+          list.all(zipped, fn(pair) { same_type(state, pair.0, pair.1) })
+      }
+    Custom(..), _
+    | Generic(..), _
+    | Unbound(..), _
+    | Tuple(..), _
+    | Function(..), _
+    -> False
+  }
+}
+
+/// Generates a field access expression.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use person <- trick.custom_type("Person", trick.public)
+///   use child <- trick.constructor("Child", [
+///     trick.Field(Some("age"), trick.int_type()),
+///   ])
+///   use adult <- trick.constructor("Adult", [
+///     trick.Field(Some("age"), trick.int_type()),
+///     trick.Field(Some("job"), trick.string_type()),
+///   ])
+///   use <- trick.end_custom_type
+/// 
+///   use age_after_birthday <- trick.function("age_after_birthday", trick.Public, {
+///     use person <- trick.parameter("person", person)
+///     person
+///     |> trick.field_access("age")
+///     |> trick.add(trick.int(1))
+///     |> trick.expression
+///     |> trick.function_body
+///   })
+/// 
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// pub type Person {
+///   Child(age: Int)
+///   Adult(age: Int, job: String)
+/// }
+/// 
+/// pub fn age_after_birthday(person: Person) -> Int {
+///   person.age + 1
+/// }
+/// ```
+/// 
+pub fn field_access(
+  value: Expression(_),
+  field: String,
+) -> Expression(Variable) {
+  use state <- Expression
+  use #(state, value) <- result.try(value.compile(state))
+
+  case unwrap_type(state, value.type_) {
+    Generic(..) as type_
+    | Unbound(..) as type_
+    | Tuple(..) as type_
+    | Function(..) as type_ -> Error(InvalidFieldAccess(type_))
+    Custom(shared_fields:, ..) as type_ ->
+      case dict.get(shared_fields, field) {
+        Ok(type_) -> {
+          Ok(#(
+            state,
+            Compiled(
+              doc.concat([
+                maybe_wrap(value, precedence_unit),
+                doc.from_string("."),
+                doc.from_string(field),
+              ]),
+              type_,
+              precedence_unit,
+            ),
+          ))
+        }
+        Error(_) -> Error(TypeDoesNotHaveField(type_:, field:))
+      }
+  }
 }

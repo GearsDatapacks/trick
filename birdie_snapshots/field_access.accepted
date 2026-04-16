@@ -1,0 +1,16 @@
+---
+version: 1.5.4
+title: field_access
+file: ./test/trick_test.gleam
+test_name: field_access_test
+---
+pub type Wibble {
+  Wibble(wibble: Int, wobble: Float)
+  Wobble(Int, wobble: Float)
+}
+
+pub fn main() -> Float {
+  let wibble = Wibble(1, 2.0)
+  wibble.wobble +. 3.0
+}
+
