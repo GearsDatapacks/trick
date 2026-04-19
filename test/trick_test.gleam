@@ -2039,3 +2039,103 @@ pub fn wrong_label_field_access_test() {
       "wibble",
     )
 }
+
+fn multiple_modules(modules: List(#(String, String))) -> String {
+  use out, #(name, contents) <- list.fold(modules, "")
+  let spacing = case out {
+    "" -> ""
+    _ -> "\n"
+  }
+
+  out <> spacing <> "//// " <> name <> ".gleam\n" <> contents
+}
+
+pub fn call_imported_function_test() {
+  let assert Ok(option_module) =
+    trick.define_module("gleam/option", {
+      use option <- trick.define_custom_type("Option")
+      use a <- trick.define_type_parameter("a")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+        trick.DefinedConstructor("None", []),
+      ])
+      trick.define_values([
+        trick.FunctionInterface(
+          "unwrap",
+          [trick.Field(None, option), trick.Field(None, a)],
+          a,
+        ),
+      ])
+    })
+
+  {
+    use imported_option <- trick.import_(option_module)
+
+    use _ <- trick.function(
+      "main",
+      trick.Public,
+      trick.function_body({
+        use option <- trick.variable(
+          "option",
+          trick.call(trick.imported_value(imported_option, "Some"), [
+            trick.int(1),
+          ]),
+        )
+        trick.expression(
+          trick.call(trick.imported_value(imported_option, "unwrap"), [
+            option,
+            trick.int(1),
+          ]),
+        )
+      }),
+    )
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("call_imported_function")
+}
+
+pub fn import_function_from_generated_module_test() {
+  let #(wibble_source, wibble_interface) =
+    {
+      use wibble_type <- trick.custom_type("Wibble", trick.Public)
+      use _wibble <- trick.constructor("Wibble", [])
+      use wobble <- trick.constructor("Wobble", [])
+      use <- trick.end_custom_type
+
+      use _transform <- trick.function("transform", trick.Public, {
+        use _value <- trick.parameter("value", wibble_type)
+        trick.function_body(trick.expression(wobble))
+      })
+
+      trick.end_module()
+    }
+    |> trick.compile("wibble")
+    |> unwrap
+
+  let wobble =
+    {
+      use wibble <- trick.import_(wibble_interface)
+
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.call(trick.imported_value(wibble, "transform"), [
+          trick.imported_value(wibble, "Wibble"),
+        ])
+          |> trick.expression
+          |> trick.function_body,
+      )
+
+      trick.end_module()
+    }
+    |> trick.to_string
+    |> unwrap
+
+  birdie.snap(
+    multiple_modules([#("wibble", wibble_source), #("wobble", wobble)]),
+    "import_function_from_generated_module",
+  )
+}

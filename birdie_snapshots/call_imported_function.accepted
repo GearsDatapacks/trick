@@ -1,0 +1,13 @@
+---
+version: 1.5.4
+title: call_imported_function
+file: ./test/trick_test.gleam
+test_name: call_imported_function_test
+---
+import gleam/option
+
+pub fn main() -> Int {
+  let option = option.Some(1)
+  option.unwrap(option, 1)
+}
+

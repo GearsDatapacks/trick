@@ -214,13 +214,19 @@ pub opaque type Module {
 
 type CompiledModule {
   Empty
+  Import(Document)
   Definition(Document)
 }
 
-fn separate_definition(definition: CompiledModule) -> Document {
+fn separate_definition(
+  definition: CompiledModule,
+  is_import: Bool,
+) -> Document {
   case definition {
     Empty -> doc.line
-    Definition(document) -> doc.prepend(document, doc.lines(2))
+    Import(document) if is_import -> doc.prepend(document, doc.line)
+    Import(document) | Definition(document) ->
+      doc.prepend(document, doc.lines(2))
   }
 }
 
@@ -260,6 +266,8 @@ pub type Error {
   /// Attempting to access a field on a custom type which does not have said
   /// field.
   TypeDoesNotHaveField(type_: ConcreteType, field: String)
+  ModuleDoesNotHaveType(module: String, type_: String)
+  ModuleDoesNotHaveValue(module: String, value: String)
 }
 
 /// The expected case of the name for a definition.
@@ -533,6 +541,7 @@ type State {
     module: String,
     type_variable_number: Int,
     used_type_variable_names: Set(String),
+    interface: ModuleInterface,
   )
 }
 
@@ -898,6 +907,38 @@ fn instantiated(
   Ok(#(state, Compiled(doc, type_, precedence)))
 }
 
+fn define_value(
+  state: State,
+  name: String,
+  type_: ConcreteType,
+  publicity: Publicity,
+) -> State {
+  use <- bool.guard(publicity == Private, state)
+  State(
+    ..state,
+    interface: ModuleInterface(
+      ..state.interface,
+      values: dict.insert(state.interface.values, name, type_),
+    ),
+  )
+}
+
+fn define_type(
+  state: State,
+  name: String,
+  type_: ConcreteType,
+  publicity: Publicity,
+) -> State {
+  use <- bool.guard(publicity == Private, state)
+  State(
+    ..state,
+    interface: ModuleInterface(
+      ..state.interface,
+      types: dict.insert(state.interface.types, name, type_),
+    ),
+  )
+}
+
 /// Returns the `Int` type.
 /// 
 pub fn int_type() -> Type {
@@ -1040,13 +1081,14 @@ const indent: Int = 2
 pub fn expression_to_string(
   expression: Expression(a),
 ) -> Result(String, Error) {
-  case expression.compile(new_state()) {
+  case expression.compile(new_state("module")) {
     Ok(#(_state, expression)) -> Ok(doc.to_string(expression.document, width))
     Error(error) -> Error(error)
   }
 }
 
-/// Turns a `Module` into a string of Gleam code.
+/// Turns a `Module` into a string of Gleam code. If you need to import the
+/// module from other generated code, use [`compile`](#compile) instead.
 /// 
 /// ### Examples
 /// 
@@ -1060,22 +1102,85 @@ pub fn expression_to_string(
 /// ```
 ///
 pub fn to_string(module: Module) -> Result(String, Error) {
-  case module.compile(new_state()) {
+  case module.compile(new_state("module")) {
     Ok(#(_state, Empty)) -> Ok("")
-    Ok(#(_state, Definition(document))) -> Ok(doc.to_string(document, width))
+    Ok(#(_state, Definition(document))) | Ok(#(_state, Import(document))) ->
+      Ok(doc.to_string(document, width))
     Error(error) -> Error(error)
   }
 }
 
-fn new_state() -> State {
+/// Compiles a generated module, returning the string of generated code as well
+/// as the module interface, so it can be imported by other generated code.
+/// 
+/// If you don't need to import it, use [`to_string`](#to_string) instead.
+/// 
+/// ### Example
+/// 
+/// ```gleam
+/// let assert Ok(#(maths_code, maths_module)) = {
+///   use _pi <- trick.constant("pi", trick.Public, trick.float(3.14))
+///   trick.end_module()
+/// }
+/// |> trick.compile("maths")
+/// 
+/// let assert Ok(main_module) = {
+///   use maths <- trick.import_(maths_module)
+///   use circle_area <- trick.function("circe_area", trick.Public, {
+///     use radius <- trick.parameter("radius", trick.float_type())
+///     radius
+///     |> trick.multiply_float(radius)
+///     |> trick.multiply_float(trick.imported_value(maths, "pi"))
+///     |> trick.expression
+///     |> trick.function_body
+///   })
+///   trick.end_module()
+/// }
+/// 
+/// file.write("maths.gleam", maths_code)
+/// file.write("main.gleam", main_module)
+/// ```
+/// 
+/// Produces:
+/// 
+/// ```gleam
+/// // maths.gleam
+/// pub const pi = 3.14
+/// 
+/// // main.gleam
+/// import maths
+/// 
+/// pub fn circle_area(radius: Float) -> Float {
+///   radius *. radius *. maths.pi
+/// }
+/// ```
+/// 
+pub fn compile(
+  module: Module,
+  module_name: String,
+) -> Result(#(String, ModuleInterface), Error) {
+  case module.compile(new_state(module_name)) {
+    Ok(#(state, Empty)) -> Ok(#("", state.interface))
+    Ok(#(state, Definition(document))) | Ok(#(state, Import(document))) ->
+      Ok(#(doc.to_string(document, width), state.interface))
+    Error(error) -> Error(error)
+  }
+}
+
+fn new_state(module_name: String) -> State {
   State(
     resolved_variables: dict.new(),
     type_variable_names: dict.new(),
     generic_variable_names: dict.new(),
     type_variable_id: 0,
-    module: "module",
+    module: module_name,
     type_variable_number: 0,
     used_type_variable_names: set.new(),
+    interface: ModuleInterface(
+      name: module_name,
+      types: dict.new(),
+      values: dict.new(),
+    ),
   )
 }
 
@@ -3196,6 +3301,8 @@ pub fn function(
 
   let #(state, return_annotation) = print_type(state, return_type)
 
+  let state = define_value(state, name, type_, publicity)
+
   Ok(#(
     state,
     Definition(
@@ -3208,7 +3315,7 @@ pub fn function(
         doc.from_string(return_annotation),
         doc.from_string(" "),
         body_doc,
-        separate_definition(rest),
+        separate_definition(rest, False),
       ]),
     ),
   ))
@@ -3278,6 +3385,9 @@ pub fn constant(
   use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
   let #(state, annotation) = print_type(state, type_)
+
+  let state = define_value(state, name, type_, publicity)
+
   Ok(#(
     state,
     Definition(
@@ -3289,7 +3399,7 @@ pub fn constant(
         doc.from_string(annotation),
         doc.from_string(" = "),
         value.document,
-        separate_definition(rest),
+        separate_definition(rest, False),
       ]),
     ),
   ))
@@ -3333,20 +3443,14 @@ pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
 fn definition_document(definition: CompiledModule) -> Document {
   case definition {
     Empty -> doc.empty
-    Definition(document) -> document
+    Definition(document) | Import(document) -> document
   }
 }
 
 fn print_type(state: State, type_: ConcreteType) -> #(State, String) {
   case unwrap_type(state, type_) {
-    Custom(module: _, name:, generics:, shared_fields: _) ->
-      case generics {
-        [] -> #(state, name)
-        _ -> {
-          let #(state, generics) = list.map_fold(generics, state, print_type)
-          #(state, name <> "(" <> string.join(generics, ", ") <> ")")
-        }
-      }
+    Custom(module:, name:, generics:, shared_fields: _) ->
+      print_custom_type(state, module, name, generics)
     Function(parameters:, return:, field_map: _) -> {
       let #(state, parameters) = list.map_fold(parameters, state, print_type)
       let #(state, return) = print_type(state, return)
@@ -3383,6 +3487,30 @@ fn print_type(state: State, type_: ConcreteType) -> #(State, String) {
           )
         }
       }
+  }
+}
+
+fn print_custom_type(
+  state: State,
+  module: String,
+  name: String,
+  generics: List(ConcreteType),
+) -> #(State, String) {
+  let name = case module == state.module || module == "gleam" {
+    True -> name
+    False -> {
+      let assert Ok(module_end) = list.last(string.split(module, "/"))
+        as "string.split always returns at least one segment"
+      module_end <> "." <> name
+    }
+  }
+
+  case generics {
+    [] -> #(state, name)
+    _ -> {
+      let #(state, generics) = list.map_fold(generics, state, print_type)
+      #(state, name <> "(" <> string.join(generics, ", ") <> ")")
+    }
   }
 }
 
@@ -3749,6 +3877,7 @@ type CustomTypeInfo {
 type CustomTypeHead {
   CustomTypeHead(
     name: String,
+    publicity: Publicity,
     parameters: List(#(String, ConcreteType)),
     type_: ConcreteType,
     constructors: List(Constructor),
@@ -3811,11 +3940,19 @@ pub fn custom_type(
   let #(state, unbound) = next_unbound(state)
 
   let info =
-    CustomTypeHead(name, parameters: [], type_: unbound, constructors: [])
+    CustomTypeHead(
+      name,
+      parameters: [],
+      type_: unbound,
+      constructors: [],
+      publicity:,
+    )
 
   let custom_type = continue(concrete(unbound))
   use #(state, custom_type) <- result.try(custom_type.compile(state, info))
   use #(state, rest) <- result.try(custom_type.rest.compile(state))
+
+  let state = define_type(state, name, custom_type.type_, publicity)
 
   let parameters = case custom_type.parameters {
     [] -> doc.empty
@@ -3840,7 +3977,7 @@ pub fn custom_type(
           doc.from_string("type "),
           doc.from_string(custom_type.name),
           parameters,
-          separate_definition(rest),
+          separate_definition(rest, False),
         ]),
       ),
     ))
@@ -3911,7 +4048,7 @@ pub fn custom_type(
         constructors,
         doc.line,
         doc.from_string("}"),
-        separate_definition(rest),
+        separate_definition(rest, False),
       ]),
     ),
   ))
@@ -3999,6 +4136,8 @@ pub fn constructor(
     }),
   )
 
+  let publicity = info.publicity
+
   use #(state, info) <- result.try(custom_type.compile(
     state,
     CustomTypeHead(..info, constructors: [
@@ -4006,6 +4145,8 @@ pub fn constructor(
       ..info.constructors
     ]),
   ))
+
+  let state = define_value(state, name, info.type_, publicity)
 
   Ok(#(
     state,
@@ -4303,4 +4444,498 @@ pub fn field_access(
         Error(_) -> Error(TypeDoesNotHaveField(type_:, field:))
       }
   }
+}
+
+/// The public interface of a module. Holds the type information about a particular
+/// module, but in order to be used in generated code, you must first import it
+/// using [`import_`](#import_).
+/// 
+pub opaque type ModuleInterface {
+  ModuleInterface(
+    name: String,
+    types: Dict(String, ConcreteType),
+    values: Dict(String, ConcreteType),
+  )
+}
+
+/// An imported module which can be used to access values.
+/// 
+pub opaque type ModuleName {
+  ModuleName(name: String, interface: ModuleInterface)
+}
+
+/// Import a particular module so it can be used.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// let assert Ok(option_module) = trick.define_module("gleam/option", ...)
+/// 
+/// {
+///   use imported_option <- trick.import_(option_module)
+///   use _ <- trick.function(
+///     "main",
+///     trick.Public,
+///     trick.function_body({
+///       use option <- trick.variable(
+///         "option",
+///         trick.call(trick.imported_value(imported_option, "Some"), [
+///           trick.int(1),
+///         ]),
+///       )
+///       trick.expression(
+///         trick.call(trick.imported_value(imported_option, "unwrap"), [
+///           option,
+///           trick.int(1),
+///         ]),
+///       )
+///     }),
+///   )
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will produce:
+/// 
+/// ```gleam
+/// import gleam/option
+/// 
+/// pub fn main() -> Int {
+///   let option = option.Some(1)
+///   option.unwrap(option, 1)
+/// }
+/// ```
+/// 
+pub fn import_(
+  module: ModuleInterface,
+  continue: fn(ModuleName) -> Module,
+) -> Module {
+  use state <- Module
+  let assert Ok(last) = list.last(string.split(module.name, "/"))
+  let name = ModuleName(name: last, interface: module)
+  use #(state, rest) <- result.try(continue(name).compile(state))
+
+  Ok(#(
+    state,
+    Definition(
+      doc.concat([
+        doc.from_string("import "),
+        doc.from_string(module.name),
+        separate_definition(rest, True),
+      ]),
+    ),
+  ))
+}
+
+/// Retrieves a type from an imported module.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use option <- trick.import_(option_module)
+///   let option_type = trick.imported_type(option, "Option")
+///   use _process_option <- trick.function("process_option", trick.Public, {
+///     use option <- trick.parameter("option", option_type)
+///     trick.function_body(trick.expression(option))
+///   })
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// import gleam/option
+/// 
+/// pub fn process_option(option: option.Option(a)) -> option.Option(a) {
+///   option
+/// }
+/// ```
+/// 
+pub fn imported_type(module: ModuleName, name: String) -> Type {
+  use state <- Type
+  case dict.get(module.interface.types, name) {
+    Ok(type_) -> Ok(#(state, type_))
+    Error(_) -> Error(ModuleDoesNotHaveType(module.interface.name, name))
+  }
+}
+
+/// Generates an expression representing a value which is imported from another
+/// module.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// {
+///   use option <- trick.import_(option_module)
+///   let none = trick.imported_value(option, "None")
+///   use _none <- trick.constant("none", trick.Public, none)
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// import gleam/option
+/// 
+/// pub const none: option.Option(a) = option.None
+/// ```
+/// 
+pub fn imported_value(module: ModuleName, name: String) -> Expression(a) {
+  use state <- Expression
+  case dict.get(module.interface.values, name) {
+    Ok(type_) -> {
+      let #(state, type_) = instantiate(state, type_)
+      Ok(#(
+        state,
+        Compiled(
+          document: doc.concat([
+            doc.from_string(module.name),
+            doc.from_string("."),
+            doc.from_string(name),
+          ]),
+          type_:,
+          precedence: precedence_unit,
+        ),
+      ))
+    }
+    Error(_) -> Error(ModuleDoesNotHaveValue(module.interface.name, name))
+  }
+}
+
+/// The public interface of a custom type, containing only type information.
+/// 
+pub opaque type CustomTypeInterface {
+  DefinedCustomType(
+    compile: fn(State, CustomTypeHead) ->
+      Result(#(State, ModuleInterface), Error),
+  )
+}
+
+/// The bare-bones interface of a module, containing only the type information
+/// for public definitions, allowing it to be imported from other modules without
+/// being able to generate any code. This is useful for creating typed interfaces
+/// for existing modules that need to be imported from generated ones. See
+/// [`define_module`](#define_module) for examples.
+/// 
+pub opaque type DefinedModule {
+  DefinedModule(compile: fn(State) -> Result(#(State, ModuleInterface), Error))
+}
+
+/// Defines the public interface of a custom type, so that it can be imported
+/// from another module.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// let assert Ok(option_module) = trick.define_module("gleam/option", {
+///   use option <- trick.define_custom_type("Option")
+///   use a <- trick.define_type_parameter("a")
+///   use <- trick.define_constructors([
+///     trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+///     trick.DefinedConstructor("None", []),
+///   ])
+///   trick.define_values([])
+/// })
+/// ```
+/// 
+pub fn define_custom_type(
+  name: String,
+  continue: fn(Type) -> CustomTypeInterface,
+) -> DefinedModule {
+  use state <- DefinedModule
+
+  use _ <- result.try(check_name_case(name, PascalCase))
+  let #(state, unbound) = next_unbound(state)
+
+  let info =
+    CustomTypeHead(
+      name,
+      publicity: Public,
+      parameters: [],
+      type_: unbound,
+      constructors: [],
+    )
+
+  let custom_type = continue(concrete(unbound))
+  custom_type.compile(state, info)
+}
+
+/// The public type interface for a type variant constructor.
+/// 
+pub type ConstructorInterface {
+  DefinedConstructor(name: String, fields: List(Field))
+}
+
+/// Defines public interface for the constructors of a custom type.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// let assert Ok(option_module) = trick.define_module("gleam/option", {
+///   use option <- trick.define_custom_type("Option")
+///   use a <- trick.define_type_parameter("a")
+///   use <- trick.define_constructors([
+///     trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+///     trick.DefinedConstructor("None", []),
+///   ])
+///   trick.define_values([])
+/// })
+/// ```
+/// 
+pub fn define_constructors(
+  constructors: List(ConstructorInterface),
+  continue: fn() -> DefinedModule,
+) -> CustomTypeInterface {
+  use state, info <- DefinedCustomType
+  use #(state, interface) <- result.try(continue().compile(state))
+
+  use #(state, constructors) <- result.try(
+    try_map_fold(constructors, state, fn(state, constructor) {
+      use #(state, fields) <- result.map(
+        try_map_fold(constructor.fields, state, fn(state, field) {
+          case field.type_.compile(state) {
+            Ok(#(state, type_)) ->
+              Ok(#(state, CompiledField(field.label, type_)))
+            Error(error) -> Error(error)
+          }
+        }),
+      )
+      #(state, Constructor(name: constructor.name, fields:))
+    }),
+  )
+  let type_ =
+    Custom(
+      module: state.module,
+      name: info.name,
+      generics: list.map(info.parameters, pair.second),
+      shared_fields: find_shared_fields(state, constructors),
+    )
+
+  use #(state, _) <- result.try(unify(state, info.type_, type_))
+
+  use #(state, values) <- result.try(
+    try_fold_with_state(
+      state,
+      constructors,
+      interface.values,
+      fn(state, values, constructor) {
+        use <- bool.lazy_guard(constructor.fields == [], fn() {
+          Ok(#(state, dict.insert(values, constructor.name, type_)))
+        })
+
+        use #(fields, arity) <- result.try(
+          list.try_fold(constructor.fields, #(dict.new(), 0), fn(pair, field) {
+            let #(map, index) = pair
+            case field.label {
+              None -> Ok(#(map, index + 1))
+              Some(label) ->
+                case dict.get(map, label) {
+                  Error(_) -> Ok(#(dict.insert(map, label, index), index + 1))
+                  Ok(_) -> Error(DuplicateLabel(label:))
+                }
+            }
+          }),
+        )
+
+        let field_map = FieldMap(arity:, fields:)
+        let field_types =
+          list.map(constructor.fields, fn(field) { field.type_ })
+
+        let type_ =
+          Function(
+            parameters: field_types,
+            return: type_,
+            field_map: Some(field_map),
+          )
+
+        Ok(#(state, dict.insert(values, constructor.name, type_)))
+      },
+    ),
+  )
+
+  Ok(#(
+    state,
+    ModuleInterface(
+      ..interface,
+      values:,
+      types: dict.insert(interface.types, info.name, type_),
+    ),
+  ))
+}
+
+/// Defines the types of public values in a module so they can be imported and
+/// used in other modules. Only contains type information, not enough information
+/// to generate code.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// let assert Ok(int_module) = trick.define_module(
+///   "gleam/int",
+///   trick.define_values([
+///     trick.ConstantInterface("zero", trick.int_type()),
+///     trick.FunctionInterface("add", trick.function_type([
+///       trick.int_type(), trick.int_type()
+///     ], trick.int_type())),
+///   ])),
+/// ```
+/// 
+pub fn define_values(values: List(ValueInterface)) -> DefinedModule {
+  use state <- DefinedModule
+
+  use #(state, values) <- result.try(
+    try_fold_with_state(state, values, dict.new(), fn(state, values, value) {
+      case value {
+        ConstantInterface(name:, type_:) ->
+          case type_.compile(state) {
+            Ok(#(state, type_)) ->
+              Ok(#(state, dict.insert(values, name, type_)))
+            Error(error) -> Error(error)
+          }
+        FunctionInterface(name:, parameters:, return_type:) -> {
+          use #(fields, arity) <- result.try(
+            list.try_fold(parameters, #(dict.new(), 0), fn(pair, parameter) {
+              let #(map, index) = pair
+              case parameter.label {
+                None -> Ok(#(map, index + 1))
+                Some(label) ->
+                  case dict.get(map, label) {
+                    Error(_) -> Ok(#(dict.insert(map, label, index), index + 1))
+                    Ok(_) -> Error(DuplicateLabel(label:))
+                  }
+              }
+            }),
+          )
+
+          let field_map = FieldMap(arity:, fields:)
+          use #(state, parameter_types) <- result.try(
+            try_map_fold(parameters, state, fn(state, parameter) {
+              parameter.type_.compile(state)
+            }),
+          )
+          use #(state, return_type) <- result.try(return_type.compile(state))
+          let type_ =
+            Function(
+              parameters: parameter_types,
+              return: return_type,
+              field_map: Some(field_map),
+            )
+
+          Ok(#(state, dict.insert(values, name, type_)))
+        }
+      }
+    }),
+  )
+
+  Ok(#(state, ModuleInterface(values, name: state.module, types: dict.new())))
+}
+
+/// The public type interface of a value in a module.
+/// 
+pub type ValueInterface {
+  ConstantInterface(name: String, type_: Type)
+  FunctionInterface(name: String, parameters: List(Field), return_type: Type)
+}
+
+/// Defines the minimum public interface of a module so it can be imported and
+/// used in generated code. If you need to generate code for this module, see
+/// [`compile`](#compile).
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// let assert Ok(interface) = trick.define_module("wibble/wobble", {
+///   use wibble <- trick.define_custom_type("Wibble")
+///   use <- trick.define_constructors([trick.DefinedConstructor("Wibble", [
+///     trick.Field(Some("self"), wibble)
+///   ])])
+///   trick.define_values([trick.FunctionInterface("wobble", [wibble], wibble)])
+/// })
+/// ```
+/// 
+pub fn define_module(
+  name: String,
+  definitions: DefinedModule,
+) -> Result(ModuleInterface, Error) {
+  new_state(name)
+  |> definitions.compile
+  |> result.map(fn(pair) {
+    let #(state, interface) = pair
+    ModuleInterface(
+      name:,
+      types: dict.map_values(interface.types, fn(_, type_) {
+        deep_unwrap(state, type_)
+      }),
+      values: dict.map_values(interface.values, fn(_, type_) {
+        deep_unwrap(state, type_)
+      }),
+    )
+  })
+}
+
+fn deep_unwrap(state: State, type_: ConcreteType) -> ConcreteType {
+  case type_ {
+    Unbound(id:) ->
+      case dict.get(state.resolved_variables, id) {
+        Error(_) -> type_
+        Ok(type_) -> deep_unwrap(state, type_)
+      }
+    Custom(module:, name:, generics:, shared_fields:) ->
+      Custom(
+        module:,
+        name:,
+        generics: list.map(generics, deep_unwrap(state, _)),
+        shared_fields:,
+      )
+    Generic(..) -> type_
+    Tuple(elements:) -> Tuple(list.map(elements, deep_unwrap(state, _)))
+    Function(parameters:, return:, field_map:) ->
+      Function(
+        parameters: list.map(parameters, deep_unwrap(state, _)),
+        return: deep_unwrap(state, return),
+        field_map:,
+      )
+  }
+}
+
+/// Defines a type parameter for a custom type interface generated using
+/// [`define_custom_type`](#define_custom_type). If you want a type parameter
+/// for a custom type being generated as code, see [`type_parameter`](#type_parameter).
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// let assert Ok(module) = trick.define_module("pair", {
+///   use pair <- trick.define_custom_type("pair")
+///   use left <- trick.define_type_parameter("left")
+///   use right <- trick.define_type_parameter("right")
+///   use <- trick.define_constructors([trick.DefinedConstructor("Pair", [
+///     trick.Field(None, left), trick.Field(None, right)
+///   ])])
+///   trick.define_values([trick.FunctionInterface("new", [left, right], pair)])
+/// })
+/// ```
+/// 
+pub fn define_type_parameter(
+  name: String,
+  continue: fn(Type) -> CustomTypeInterface,
+) -> CustomTypeInterface {
+  use state, info <- DefinedCustomType
+
+  use _ <- result.try(check_name_case(name, SnakeCase))
+  let #(state, type_) = named_generic(state, name)
+
+  let info =
+    CustomTypeHead(
+      ..info,
+      parameters: list.append(info.parameters, [#(name, type_)]),
+    )
+
+  continue(concrete(type_)).compile(state, info)
 }

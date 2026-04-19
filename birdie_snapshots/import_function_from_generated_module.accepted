@@ -1,0 +1,23 @@
+---
+version: 1.5.4
+title: import_function_from_generated_module
+file: ./test/trick_test.gleam
+test_name: import_function_from_generated_module_test
+---
+//// wibble.gleam
+pub type Wibble {
+  Wibble
+  Wobble
+}
+
+pub fn transform(value: Wibble) -> Wibble {
+  Wobble
+}
+
+//// wobble.gleam
+import wibble
+
+pub fn main() -> wibble.Wibble {
+  wibble.transform(wibble.Wibble)
+}
+
