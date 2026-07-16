@@ -1396,7 +1396,10 @@ pub fn custom_type_used_in_function_test() {
       trick.function_body({
         use value2 <- trick.variable(
           "value2",
-          trick.call(other_constructor, [trick.int(10), trick.float(3.14)]),
+          trick.call(trick.construct(other_constructor), [
+            trick.int(10),
+            trick.float(3.14),
+          ]),
         )
         trick.expression(trick.tuple([value, value2]))
       })
@@ -1424,7 +1427,7 @@ pub fn custom_type_with_labels_test() {
       trick.function_body({
         use value2 <- trick.variable(
           "value2",
-          trick.labelled_call(other_constructor, [
+          trick.labelled_call(trick.construct(other_constructor), [
             trick.Argument(None, trick.int(10)),
             trick.Argument(Some("wibble"), trick.float(3.14)),
           ]),
@@ -1493,8 +1496,12 @@ pub fn construct_generic_custom_type_test() {
       "main",
       trick.Public,
       trick.function_body({
-        use <- trick.discard(trick.expression(trick.call(some, [trick.int(1)])))
-        trick.expression(trick.call(some, [trick.string("Hello")]))
+        use <- trick.discard(
+          trick.expression(trick.call(trick.construct(some), [trick.int(1)])),
+        )
+        trick.expression(
+          trick.call(trick.construct(some), [trick.string("Hello")]),
+        )
       }),
     )
     trick.end_module()
@@ -1519,7 +1526,10 @@ pub fn generic_cannot_be_two_types_at_once() {
         trick.Public,
         trick.function_body(
           trick.expression(
-            trick.call(double, [trick.int(1), trick.string("2")]),
+            trick.call(trick.construct(double), [
+              trick.int(1),
+              trick.string("2"),
+            ]),
           ),
         ),
       )
@@ -1937,7 +1947,7 @@ pub fn field_access_test() {
       trick.function_body({
         use wibble <- trick.variable(
           "wibble",
-          trick.call(wibble, [trick.int(1), trick.float(2.0)]),
+          trick.call(trick.construct(wibble), [trick.int(1), trick.float(2.0)]),
         )
         wibble
         |> trick.field_access("wobble")
@@ -1967,7 +1977,7 @@ pub fn nested_field_access_test() {
       trick.function_body({
         use wibble <- trick.variable(
           "wibble",
-          trick.call(wibble, [trick.todo_(None)]),
+          trick.call(trick.construct(wibble), [trick.todo_(None)]),
         )
         wibble
         |> trick.field_access("wibble")
@@ -2015,7 +2025,7 @@ pub fn wrong_label_field_access_test() {
         trick.function_body({
           use wibble <- trick.variable(
             "wibble",
-            trick.call(wibble, [trick.int(1), trick.float(2.0)]),
+            trick.call(trick.construct(wibble), [trick.int(1), trick.float(2.0)]),
           )
           wibble
           |> trick.field_access("wibble")
@@ -2107,7 +2117,7 @@ pub fn import_function_from_generated_module_test() {
 
       use _transform <- trick.function("transform", trick.Public, {
         use _value <- trick.parameter("value", wibble_type)
-        trick.function_body(trick.expression(wobble))
+        trick.function_body(trick.expression(trick.construct(wobble)))
       })
 
       trick.end_module()

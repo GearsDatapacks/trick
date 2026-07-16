@@ -5,7 +5,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 ### Expressions
 
 - Bit arrays*
-- Case expressions
 - Let assert
 - Let with patterns
 - Pipes*
@@ -27,3 +26,8 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 - Proper type printing
 - Opaque types
 - Importing types in module interfaces
+- Case expression exhaustiveness checking*
+- String prefix patterns with a binding to the prefix*
+- Alternative patterns*
+- Multiple `case` subjects
+- Clause guards*

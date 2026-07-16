@@ -1,0 +1,14 @@
+---
+version: 1.5.4
+title: wibble
+---
+pub type Wibble {
+  Wibble(Int, wibble: Float, wobble: String, wubble: Bool)
+}
+
+pub fn main(wibble: Wibble) -> Bool {
+  case wibble {
+    Wibble(wubble: b, ..) -> b
+  }
+}
+
