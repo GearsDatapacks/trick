@@ -1,5 +1,4 @@
 import birdie
-import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 import gleeunit
@@ -210,27 +209,27 @@ pub fn operator_precedence_test() {
 }
 
 fn type_int() {
-  trick.Custom("gleam", "Int", [], dict.new())
+  trick.Custom("gleam", "Int", [])
 }
 
 fn type_float() {
-  trick.Custom("gleam", "Float", [], dict.new())
+  trick.Custom("gleam", "Float", [])
 }
 
 fn type_string() {
-  trick.Custom("gleam", "String", [], dict.new())
+  trick.Custom("gleam", "String", [])
 }
 
 fn type_bool() {
-  trick.Custom("gleam", "Bool", [], dict.new())
+  trick.Custom("gleam", "Bool", [])
 }
 
 fn type_nil() {
-  trick.Custom("gleam", "Nil", [], dict.new())
+  trick.Custom("gleam", "Nil", [])
 }
 
 fn type_list(element: trick.ConcreteType) -> trick.ConcreteType {
-  trick.Custom("gleam", "List", [element], dict.new())
+  trick.Custom("gleam", "List", [element])
 }
 
 pub fn binary_operator_type_mismatch_test() {
@@ -1719,7 +1718,7 @@ pub fn recursive_type_test() {
     use _ <- trick.constructor("Empty", [])
     use _ <- trick.constructor("NonEmpty", [
       trick.Field(Some("head"), element),
-      trick.Field(Some("tail"), list),
+      trick.Field(Some("tail"), trick.with_generics(list, [element])),
     ])
     use <- trick.end_custom_type
 
@@ -2040,12 +2039,7 @@ pub fn wrong_label_field_access_test() {
 
   assert error
     == trick.TypeDoesNotHaveField(
-      trick.Custom(
-        module: "module",
-        name: "Wibble",
-        generics: [],
-        shared_fields: dict.from_list([#("wobble", type_float())]),
-      ),
+      trick.Custom(module: "module", name: "Wibble", generics: []),
       "wibble",
     )
 }
@@ -2072,7 +2066,10 @@ pub fn call_imported_function_test() {
       trick.define_values([
         trick.FunctionInterface(
           "unwrap",
-          [trick.Field(None, option), trick.Field(None, a)],
+          [
+            trick.Field(None, trick.with_generics(option, [a])),
+            trick.Field(None, a),
+          ],
           a,
         ),
       ])
@@ -2650,7 +2647,6 @@ pub fn variant_pattern_on_wrong_type_test() {
         module: "module",
         name: "BoolButBetter",
         generics: [],
-        shared_fields: dict.new(),
       ),
       got: type_bool(),
     )
@@ -2777,15 +2773,7 @@ pub fn constructor_pattern_on_wrong_type_test() {
     }
     |> trick.to_string
 
-  let type_ =
-    trick.Custom(
-      module: "module",
-      name: "Person",
-      generics: [],
-      shared_fields: dict.from_list([
-        #("name", trick.Custom("gleam", "String", [], dict.from_list([]))),
-      ]),
-    )
+  let type_ = trick.Custom(module: "module", name: "Person", generics: [])
   assert error == trick.TypeMismatch(expected: type_, got: type_list(type_))
 }
 
@@ -2899,6 +2887,48 @@ pub fn constructor_pattern_duplicate_label_test() {
   assert error == trick.DuplicateLabel("name")
 }
 
+pub fn constructor_pattern_with_wrong_generic_test() {
+  let assert Error(error) =
+    {
+      use option <- trick.custom_type("Option", trick.Public)
+      use a <- trick.type_parameter("a")
+      use some <- trick.constructor("Some", [trick.Field(None, a)])
+      use _ <- trick.constructor("None", [])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function("add_one", trick.Public, {
+        use value <- trick.parameter(
+          "value",
+          trick.with_generics(option, [trick.string_type()]),
+        )
+        trick.function_body(
+          trick.expression(
+            trick.case_(value, [
+              {
+                use _ <- trick.clause(
+                  trick.constructor_pattern(some, {
+                    use _ <- trick.pattern(trick.int_pattern(0))
+                    trick.return_from_pattern(Nil)
+                  }),
+                )
+                trick.int(1)
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.int(0)
+              },
+            ]),
+          ),
+        )
+      })
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_string())
+}
+
 pub fn case_with_different_branch_types_test() {
   let assert Error(error) =
     trick.case_(trick.int(0), [
@@ -2914,4 +2944,120 @@ pub fn case_with_different_branch_types_test() {
     |> trick.expression_to_string
 
   assert error == trick.TypeMismatch(expected: type_bool(), got: type_int())
+}
+
+pub fn call_function_with_wrong_generic_test() {
+  let assert Error(error) =
+    {
+      use option <- trick.custom_type("Option", trick.Public)
+      use a <- trick.type_parameter("a")
+      use some <- trick.constructor("Some", [trick.Field(None, a)])
+      use _ <- trick.constructor("None", [])
+      use <- trick.end_custom_type
+
+      use add_one <- trick.function("add_one", trick.Public, {
+        use value <- trick.parameter(
+          "value",
+          trick.with_generics(option, [trick.int_type()]),
+        )
+        trick.function_body(trick.expression(value))
+      })
+
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body(
+          trick.expression(
+            trick.call(add_one, [
+              trick.call(trick.construct(some), [trick.float(1.0)]),
+            ]),
+          ),
+        ),
+      )
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
+}
+
+pub fn instantiate_generic_with_wrong_number_of_arguments_test() {
+  let assert Error(error) =
+    {
+      use option <- trick.custom_type("Option", trick.Public)
+      use a <- trick.type_parameter("a")
+      use _ <- trick.constructor("Some", [trick.Field(None, a)])
+      use _ <- trick.constructor("None", [])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function("add_one", trick.Public, {
+        use value <- trick.parameter(
+          "value",
+          trick.with_generics(option, [trick.int_type(), trick.string_type()]),
+        )
+        trick.function_body(trick.expression(value))
+      })
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.IncorrectNumberOfTypeArguments(expected: 1, got: 2)
+}
+
+pub fn import_generic_type_as_not_generic_test() {
+  let assert Ok(module_interface) =
+    trick.define_module("gleam/option", {
+      use _ <- trick.define_custom_type("Option")
+      use a <- trick.define_type_parameter("a")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+        trick.DefinedConstructor("None", []),
+      ])
+      trick.define_values([])
+    })
+
+  let assert Error(error) =
+    {
+      use option_module <- trick.import_(module_interface)
+      use _ <- trick.function("wibble", trick.Public, {
+        use value <- trick.parameter(
+          "value",
+          trick.imported_type(option_module, "Option"),
+        )
+        trick.function_body(trick.expression(value))
+      })
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.UnexpectedGenericType(module: "gleam/option", name: "Option")
+}
+
+pub fn import_non_generic_type_as_generic_test() {
+  let assert Ok(module_interface) =
+    trick.define_module("wibble", {
+      use _ <- trick.define_custom_type("Wobble")
+      use <- trick.define_constructors([trick.DefinedConstructor("Wubble", [])])
+      trick.define_values([])
+    })
+
+  let assert Error(error) =
+    {
+      use module <- trick.import_(module_interface)
+      use _ <- trick.function("wibble", trick.Public, {
+        use value <- trick.parameter(
+          "value",
+          trick.imported_generic_type(module, "Wobble")
+            |> trick.with_generics([]),
+        )
+        trick.function_body(trick.expression(value))
+      })
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ExpectedGenericType(module: "wibble", name: "Wobble")
 }
