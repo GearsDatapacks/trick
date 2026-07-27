@@ -1,0 +1,10 @@
+---
+version: 1.5.4
+title: let_with_tuple_pattern
+file: ./test/trick_test.gleam
+test_name: let_with_tuple_pattern_test
+---
+{
+  let #(a, b) = #(1, 2)
+  a + b
+}

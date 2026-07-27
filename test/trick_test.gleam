@@ -3061,3 +3061,190 @@ pub fn import_non_generic_type_as_generic_test() {
 
   assert error == trick.ExpectedGenericType(module: "wibble", name: "Wobble")
 }
+
+pub fn let_with_tuple_pattern_test() {
+  trick.block({
+    use #(a, b) <- trick.let_(
+      trick.tuple_pattern({
+        use a <- trick.pattern(trick.variable_pattern("a"))
+        use b <- trick.pattern(trick.variable_pattern("b"))
+        trick.return_from_pattern(#(a, b))
+      }),
+      trick.tuple([trick.int(1), trick.int(2)]),
+    )
+    trick.expression(trick.add(a, b))
+  })
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("let_with_tuple_pattern")
+}
+
+pub fn let_with_single_constructor_pattern_test() {
+  {
+    use person_type <- trick.custom_type("Person", trick.Public)
+    use person_constructor <- trick.constructor("Person", [
+      trick.Field(Some("name"), trick.string_type()),
+      trick.Field(Some("age"), trick.int_type()),
+      trick.Field(Some("height"), trick.float_type()),
+    ])
+    use <- trick.end_custom_type
+
+    use _ <- trick.function("wibble", trick.Public, {
+      use person <- trick.parameter("person", person_type)
+      trick.function_body({
+        use #(name, age) <- trick.let_(
+          trick.constructor_pattern(person_constructor, {
+            use age <- trick.pattern(trick.variable_pattern("age"))
+            use name <- trick.labelled_pattern(
+              "name",
+              trick.variable_pattern("name"),
+            )
+            use <- trick.ignore_fields
+            #(name, age)
+          }),
+          person,
+        )
+        trick.expression(trick.tuple([name, age]))
+      })
+    })
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("let_with_single_constructor_pattern")
+}
+
+pub fn let_with_list_pattern_test() {
+  let assert Error(error) =
+    trick.block({
+      use #(a, b) <- trick.let_(
+        trick.list_pattern({
+          use a <- trick.pattern(trick.variable_pattern("a"))
+          use b <- trick.pattern(trick.variable_pattern("b"))
+          trick.return_from_pattern(#(a, b))
+        }),
+        trick.list([trick.int(1), trick.int(2)]),
+      )
+      trick.expression(trick.add(a, b))
+    })
+    |> trick.expression_to_string
+
+  assert error == trick.PatternDoesNotAlwaysMatch
+}
+
+pub fn let_with_wrong_pattern_type_test() {
+  let assert Error(error) =
+    trick.block({
+      use #(a, b) <- trick.let_(
+        trick.tuple_pattern({
+          use a <- trick.pattern(trick.variable_pattern("a"))
+          use b <- trick.pattern(trick.variable_pattern("b"))
+          trick.return_from_pattern(#(a, b))
+        }),
+        trick.list([trick.int(1), trick.int(2)]),
+      )
+      trick.expression(trick.add(a, b))
+    })
+    |> trick.expression_to_string
+
+  assert error
+    == trick.TypeMismatch(
+      expected: trick.Tuple([trick.Unbound(0), trick.Unbound(1)]),
+      got: type_list(type_int()),
+    )
+}
+
+pub fn let_with_inexhaustive_constructor_pattern_test() {
+  let assert Error(error) =
+    {
+      use person_type <- trick.custom_type("Person", trick.Public)
+      use child_constructor <- trick.constructor("Child", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+        trick.Field(Some("height"), trick.float_type()),
+      ])
+      use _ <- trick.constructor("Adult", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+        trick.Field(Some("job"), trick.string_type()),
+      ])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function("wibble", trick.Public, {
+        use person <- trick.parameter("person", person_type)
+        trick.function_body({
+          use #(name, age) <- trick.let_(
+            trick.constructor_pattern(child_constructor, {
+              use age <- trick.pattern(trick.variable_pattern("age"))
+              use name <- trick.labelled_pattern(
+                "name",
+                trick.variable_pattern("name"),
+              )
+              use <- trick.ignore_fields
+              #(name, age)
+            }),
+            person,
+          )
+          trick.expression(trick.tuple([name, age]))
+        })
+      })
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.PatternDoesNotAlwaysMatch
+}
+
+pub fn let_with_int_pattern_test() {
+  let assert Error(error) =
+    trick.block({
+      use _ <- trick.let_(trick.int_pattern(1), trick.int(1))
+      trick.expression(trick.nil())
+    })
+    |> trick.expression_to_string
+
+  assert error == trick.PatternDoesNotAlwaysMatch
+}
+
+pub fn let_assert_test() {
+  trick.block({
+    use #(a, b) <- trick.let_assert(
+      trick.list_pattern({
+        use _ <- trick.pattern(trick.int_pattern(1))
+        use a <- trick.pattern(trick.variable_pattern("a"))
+        use _ <- trick.pattern(trick.int_pattern(3))
+        use b <- trick.pattern(trick.variable_pattern("b"))
+        trick.return_from_pattern(#(a, b))
+      }),
+      trick.list([trick.int(1), trick.int(2), trick.int(3), trick.int(4)]),
+    )
+    trick.expression(trick.add(a, b))
+  })
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("let_assert")
+}
+
+pub fn let_assert_with_wrong_pattern_type_test() {
+  let assert Error(error) =
+    trick.block({
+      use #(a, b) <- trick.let_assert(
+        trick.list_pattern({
+          use a <- trick.pattern(trick.variable_pattern("a"))
+          use b <- trick.pattern(trick.variable_pattern("b"))
+          trick.return_from_pattern(#(a, b))
+        }),
+        trick.tuple([trick.int(1), trick.int(2)]),
+      )
+      trick.expression(trick.add(a, b))
+    })
+    |> trick.expression_to_string
+
+  assert error
+    == trick.TypeMismatch(
+      expected: type_list(trick.Unbound(2)),
+      got: trick.Tuple([type_int(), type_int()]),
+    )
+}

@@ -1,0 +1,15 @@
+---
+version: 1.5.4
+title: let_with_single_constructor_pattern
+file: ./test/trick_test.gleam
+test_name: let_with_single_constructor_pattern_test
+---
+pub type Person {
+  Person(name: String, age: Int, height: Float)
+}
+
+pub fn wibble(person: Person) -> #(String, Float) {
+  let Person(age, name: name, ..) = person
+  #(name, age)
+}
+

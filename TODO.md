@@ -5,8 +5,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 ### Expressions
 
 - Bit arrays*
-- Let assert
-- Let with patterns
 - Pipes*
 - Record updates*
 - Use expressions*

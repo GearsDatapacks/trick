@@ -272,6 +272,7 @@ pub type Error {
   IncorrectNumberOfTypeArguments(expected: Int, got: Int)
   UnexpectedGenericType(module: String, name: String)
   ExpectedGenericType(module: String, name: String)
+  PatternDoesNotAlwaysMatch
 }
 
 /// The expected case of the name for a definition.
@@ -544,8 +545,12 @@ type State {
     type_variable_number: Int,
     used_type_variable_names: Set(String),
     interface: ModuleInterface,
-    shared_fields: Dict(#(String, String), Dict(String, ConcreteType)),
+    type_info: Dict(#(String, String), TypeInfo),
   )
+}
+
+type TypeInfo {
+  TypeInfo(shared_fields: Dict(String, ConcreteType), constructor_count: Int)
 }
 
 fn type_int() -> ConcreteType {
@@ -1213,9 +1218,9 @@ fn new_state(module_name: String) -> State {
       name: module_name,
       types: dict.new(),
       values: dict.new(),
-      shared_fields: dict.new(),
+      type_info: dict.new(),
     ),
-    shared_fields: dict.new(),
+    type_info: dict.new(),
   )
 }
 
@@ -2102,6 +2107,8 @@ pub fn echo_(
 
 /// Declares a variable in the current scope. Calls the continuing function with
 /// an expression representing the variable name.
+/// 
+/// For matching more complex patterns, use [`let_`](#let_)
 ///
 /// ### Examples
 ///
@@ -4358,17 +4365,20 @@ pub fn end_custom_type(continue: fn() -> Module) -> CustomType(a) {
     False -> unify_custom_type(state, info)
   })
 
-  let shared_fields =
+  let type_info =
     dict.insert(
-      state.shared_fields,
+      state.type_info,
       #(state.module, info.name),
-      find_shared_fields(state, info.constructors),
+      TypeInfo(
+        shared_fields: find_shared_fields(state, info.constructors),
+        constructor_count: list.length(info.constructors),
+      ),
     )
   let state =
     State(
       ..state,
-      shared_fields:,
-      interface: ModuleInterface(..state.interface, shared_fields:),
+      type_info:,
+      interface: ModuleInterface(..state.interface, type_info:),
     )
 
   let rest = continue()
@@ -4547,9 +4557,9 @@ pub fn field_access(
     | Tuple(..) as type_
     | Function(..) as type_ -> Error(InvalidFieldAccess(type_))
     Custom(name:, module:, generics: _) as type_ ->
-      case dict.get(state.shared_fields, #(module, name)) {
-        Ok(shared_fields) ->
-          case dict.get(shared_fields, field) {
+      case dict.get(state.type_info, #(module, name)) {
+        Ok(info) ->
+          case dict.get(info.shared_fields, field) {
             Ok(type_) -> {
               Ok(#(
                 state,
@@ -4580,7 +4590,7 @@ pub opaque type ModuleInterface {
     name: String,
     types: Dict(String, ConcreteType),
     values: Dict(String, ConcreteType),
-    shared_fields: Dict(#(String, String), Dict(String, ConcreteType)),
+    type_info: Dict(#(String, String), TypeInfo),
   )
 }
 
@@ -4641,10 +4651,7 @@ pub fn import_(
   let assert Ok(last) = list.last(string.split(module.name, "/"))
   let name = ModuleName(name: last, interface: module)
   let state =
-    State(
-      ..state,
-      shared_fields: dict.merge(module.shared_fields, state.shared_fields),
-    )
+    State(..state, type_info: dict.merge(module.type_info, state.type_info))
   use #(state, rest) <- result.try(continue(name).compile(state))
 
   Ok(#(
@@ -4903,10 +4910,13 @@ pub fn define_constructors(
   let state =
     State(
       ..state,
-      shared_fields: dict.insert(
-        state.shared_fields,
+      type_info: dict.insert(
+        state.type_info,
         #(state.module, info.name),
-        find_shared_fields(state, constructors),
+        TypeInfo(
+          shared_fields: find_shared_fields(state, constructors),
+          constructor_count: list.length(constructors),
+        ),
       ),
     )
 
@@ -5032,7 +5042,7 @@ pub fn define_values(values: List(ValueInterface)) -> DefinedModule {
       values,
       name: state.module,
       types: dict.new(),
-      shared_fields: dict.new(),
+      type_info: dict.new(),
     ),
   ))
 }
@@ -5080,8 +5090,13 @@ pub fn define_module(
       values: dict.map_values(interface.values, fn(_, type_) {
         deep_unwrap(state, type_)
       }),
-      shared_fields: dict.map_values(state.shared_fields, fn(_, fields) {
-        dict.map_values(fields, fn(_, type_) { deep_unwrap(state, type_) })
+      type_info: dict.map_values(state.type_info, fn(_, info) {
+        TypeInfo(
+          ..info,
+          shared_fields: dict.map_values(info.shared_fields, fn(_, type_) {
+            deep_unwrap(state, type_)
+          }),
+        )
       }),
     )
   })
@@ -5157,7 +5172,11 @@ pub fn define_type_parameter(
 /// return more than one (constructors, lists, etc.).
 ///
 pub opaque type Pattern(a) {
-  Pattern(compile: fn(State) -> Result(#(State, Compiled, a), Error))
+  Pattern(compile: fn(State) -> Result(#(State, CompiledPattern, a), Error))
+}
+
+type CompiledPattern {
+  CompiledPattern(document: Document, type_: ConcreteType, always_matches: Bool)
 }
 
 /// A clause of a `case` expression.
@@ -5167,13 +5186,13 @@ pub opaque type Clause {
 }
 
 type CompiledClause {
-  CompiledClause(pattern: Compiled, body: Compiled)
+  CompiledClause(pattern: CompiledPattern, body: Compiled)
 }
 
 type PatternItem {
-  PlainPattern(Compiled)
-  ListTail(Compiled)
-  Labelled(String, Compiled)
+  PlainPattern(CompiledPattern)
+  ListTail(CompiledPattern)
+  Labelled(String, CompiledPattern)
   Spread
 }
 
@@ -5435,15 +5454,21 @@ pub fn clause(
 pub fn tuple_pattern(elements: PatternList(Unlabelled, a)) -> Pattern(a) {
   use state <- Pattern
   use #(state, elements, return) <- result.try(elements.compile(state))
-  use zipped <- result.try(
-    list.try_map(elements, fn(item) {
+  let #(patterns, types, always_matches) =
+    list.fold(elements, #([], [], True), fn(acc, item) {
+      let #(patterns, types, always_matches) = acc
       case item {
-        PlainPattern(compiled) -> Ok(#(compiled.document, compiled.type_))
+        PlainPattern(compiled) -> #(
+          [compiled.document, ..patterns],
+          [compiled.type_, ..types],
+          always_matches && compiled.always_matches,
+        )
         ListTail(_) | Labelled(_, _) | Spread -> panic as "unreachable"
       }
-    }),
-  )
-  let #(patterns, types) = list.unzip(zipped)
+    })
+
+  let patterns = list.reverse(patterns)
+  let types = list.reverse(types)
 
   let document =
     doc.concat([
@@ -5459,7 +5484,7 @@ pub fn tuple_pattern(elements: PatternList(Unlabelled, a)) -> Pattern(a) {
 
   Ok(#(
     state,
-    Compiled(document:, type_: Tuple(types), precedence: precedence_unit),
+    CompiledPattern(document:, type_: Tuple(types), always_matches:),
     return,
   ))
 }
@@ -5538,10 +5563,10 @@ pub fn variable_pattern(name: String) -> Pattern(Expression(Variable)) {
   let expression = instantiated(doc.from_string(name), type_, precedence_unit)
   Ok(#(
     state,
-    Compiled(
+    CompiledPattern(
       document: doc.from_string(name),
       type_: type_,
-      precedence: precedence_unit,
+      always_matches: True,
     ),
     expression,
   ))
@@ -5624,7 +5649,7 @@ pub fn list_pattern(elements: PatternList(WithTail, a)) -> Pattern(a) {
 
   Ok(#(
     state,
-    Compiled(document:, type_: list_type, precedence: precedence_unit),
+    CompiledPattern(document:, type_: list_type, always_matches: False),
     return,
   ))
 }
@@ -5727,10 +5752,10 @@ pub fn int_pattern(value: Int) -> Pattern(Nil) {
   Pattern(fn(state) {
     Ok(#(
       state,
-      Compiled(
+      CompiledPattern(
         document: doc.from_string(int.to_string(value)),
         type_: type_int(),
-        precedence: precedence_unit,
+        always_matches: False,
       ),
       Nil,
     ))
@@ -5768,10 +5793,10 @@ pub fn float_pattern(value: Float) -> Pattern(Nil) {
   Pattern(fn(state) {
     Ok(#(
       state,
-      Compiled(
+      CompiledPattern(
         document: doc.from_string(float.to_string(value)),
         type_: type_float(),
-        precedence: precedence_unit,
+        always_matches: False,
       ),
       Nil,
     ))
@@ -5810,10 +5835,10 @@ pub fn string_pattern(value: String) -> Pattern(Nil) {
   Pattern(fn(state) {
     Ok(#(
       state,
-      Compiled(
+      CompiledPattern(
         document: doc.from_string(escape_string_literal(value)),
         type_: type_string(),
-        precedence: precedence_unit,
+        always_matches: False,
       ),
       Nil,
     ))
@@ -5870,7 +5895,11 @@ pub fn assignment_pattern(
     instantiated(doc.from_string(name), pattern.type_, precedence_unit)
   Ok(#(
     state,
-    Compiled(document:, type_: pattern.type_, precedence: precedence_unit),
+    CompiledPattern(
+      document:,
+      type_: pattern.type_,
+      always_matches: pattern.always_matches,
+    ),
     #(variables, variable),
   ))
 }
@@ -5963,12 +5992,20 @@ pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
       got: list.length(constructor.parameters),
     )),
   )
+  let constructor_count = case unwrap_type(state, constructor.type_) {
+    Custom(module:, name:, ..) ->
+      case dict.get(state.type_info, #(module, name)) {
+        Ok(info) -> info.constructor_count
+        Error(_) -> 0
+      }
+    _ -> 0
+  }
   Ok(#(
     state,
-    Compiled(
+    CompiledPattern(
       document: doc.from_string(constructor.name),
       type_: constructor.type_,
-      precedence: precedence_unit,
+      always_matches: constructor_count == 1,
     ),
     Nil,
   ))
@@ -6212,7 +6249,20 @@ pub fn constructor_pattern(
         ])
         |> doc.group
 
-      Ok(#(state, Compiled(document, type_, precedence_unit), variables))
+      let constructor_count = case unwrap_type(state, constructor.type_) {
+        Custom(module:, name:, ..) ->
+          case dict.get(state.type_info, #(module, name)) {
+            Ok(info) -> info.constructor_count
+            Error(_) -> 0
+          }
+        _ -> 0
+      }
+
+      Ok(#(
+        state,
+        CompiledPattern(document, type_, always_matches: constructor_count == 1),
+        variables,
+      ))
     }
   }
 }
@@ -6260,7 +6310,11 @@ pub fn string_prefix_pattern(
     ])
   Ok(#(
     state,
-    Compiled(document:, type_: type_string(), precedence: precedence_unit),
+    CompiledPattern(
+      document:,
+      type_: type_string(),
+      always_matches: prefix == "",
+    ),
     variable,
   ))
 }
@@ -6283,8 +6337,8 @@ pub fn string_prefix_pattern(
 ///
 /// ```gleam
 /// case 1 {
-///  _ -> Nil
-///}
+///   _ -> Nil
+/// }
 /// ```
 ///
 pub fn discard_pattern() -> Pattern(Nil) {
@@ -6292,10 +6346,10 @@ pub fn discard_pattern() -> Pattern(Nil) {
   let #(state, type_) = next_unbound(state)
   Ok(#(
     state,
-    Compiled(
+    CompiledPattern(
       document: doc.from_string("_"),
       type_: type_,
-      precedence: precedence_unit,
+      always_matches: True,
     ),
     Nil,
   ))
@@ -6341,11 +6395,7 @@ pub fn bool_pattern(bool: Bool) -> Pattern(Nil) {
   use state <- Pattern
   Ok(#(
     state,
-    Compiled(
-      doc.from_string(bool.to_string(bool)),
-      type_bool(),
-      precedence_unit,
-    ),
+    CompiledPattern(doc.from_string(bool.to_string(bool)), type_bool(), False),
     Nil,
   ))
 }
@@ -6373,6 +6423,7 @@ pub fn bool_pattern(bool: Bool) -> Pattern(Nil) {
 ///     trick.function_body(trick.expression(trick.tuple([a, b])))
 ///   })
 /// }
+/// |> trick.to_string
 /// ```
 /// 
 /// Will generate:
@@ -6423,4 +6474,138 @@ pub fn with_generics(
         got: list.length(generics),
       ))
   }
+}
+
+/// Generates a `let assert` statement which matches the provided expression to
+/// the specified pattern.
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// trick.block({
+///   use #(a, b) <- trick.let_assert(
+///     trick.list_pattern({
+///       use _ <- trick.pattern(trick.int_pattern(1))
+///       use a <- trick.pattern(trick.variable_pattern("a"))
+///       use _ <- trick.pattern(trick.int_pattern(3))
+///       use b <- trick.pattern(trick.variable_pattern("b"))
+///       trick.return_from_pattern(#(a, b))
+///     }),
+///     trick.list([trick.int(1), trick.int(2), trick.int(3), trick.int(4)]),
+///   )
+///   trick.expression(trick.add(a, b))
+/// })
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   let assert [1, a, 3, b] = [1, 2, 3, 4]
+///   a + b
+/// }
+/// ```
+/// 
+pub fn let_assert(
+  pattern: Pattern(a),
+  value: Expression(a),
+  continue: fn(a) -> Statement,
+) -> Statement {
+  use state <- Statement
+  use #(state, pattern, variables) <- result.try(pattern.compile(state))
+  use #(state, value) <- result.try(value.compile(state))
+
+  use #(state, _) <- result.try(unify(state, value.type_, pattern.type_))
+
+  let declaration =
+    [
+      doc.from_string("let assert "),
+      pattern.document,
+      doc.break(" = ", " ="),
+      value.document,
+    ]
+    |> grouped
+    |> doc.append(doc.line)
+
+  let rest = continue(variables)
+  use #(state, rest) <- result.try(rest.compile(state))
+
+  Ok(#(
+    state,
+    Compiled(
+      doc.prepend(declaration, to: rest.document) |> doc.force_break,
+      rest.type_,
+      precedence_unit,
+    ),
+  ))
+}
+
+/// Generates a `let` statement which matches the provided expression to the
+/// specified pattern. Returns an error if the pattern does not always match.
+/// 
+/// For binding a simple variable pattern, it's easier to use
+/// [`variable`](#variable).
+/// 
+/// ### Examples
+/// 
+/// ```
+/// trick.block({
+///   use #(a, b) <- trick.let_(
+///     trick.tuple_pattern({
+///       use a <- trick.pattern(trick.variable_pattern("a"))
+///       use b <- trick.pattern(trick.variable_pattern("b"))
+///       trick.return_from_pattern(#(a, b))
+///     }),
+///     trick.tuple([trick.int(1), trick.int(2)])
+///   )
+///   trick.expression(trick.add(a, b))
+/// })
+/// |> trick.expression_to_string
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// {
+///   let #(a, b) = #(1, 2)
+///   a + b
+/// }
+/// ```
+/// 
+pub fn let_(
+  pattern: Pattern(a),
+  value: Expression(a),
+  continue: fn(a) -> Statement,
+) -> Statement {
+  use state <- Statement
+  use #(state, pattern, variables) <- result.try(pattern.compile(state))
+
+  use <- bool.guard(!pattern.always_matches, Error(PatternDoesNotAlwaysMatch))
+
+  use #(state, value) <- result.try(value.compile(state))
+
+  use #(state, _) <- result.try(unify(state, value.type_, pattern.type_))
+
+  let declaration =
+    [
+      doc.from_string("let "),
+      pattern.document,
+      doc.break(" = ", " ="),
+      value.document,
+    ]
+    |> grouped
+    |> doc.append(doc.line)
+
+  let rest = continue(variables)
+  use #(state, rest) <- result.try(rest.compile(state))
+
+  Ok(#(
+    state,
+    Compiled(
+      doc.prepend(declaration, to: rest.document) |> doc.force_break,
+      rest.type_,
+      precedence_unit,
+    ),
+  ))
 }

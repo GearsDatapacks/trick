@@ -1,0 +1,10 @@
+---
+version: 1.5.4
+title: let_assert
+file: ./test/trick_test.gleam
+test_name: let_assert_test
+---
+{
+  let assert [1, a, 3, b] = [1, 2, 3, 4]
+  a + b
+}
