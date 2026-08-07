@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: assignment_pattern
+file: ./test/trick_test.gleam
+test_name: assignment_pattern_test
+---
+case 1 {
+  0 as zero -> zero + 1
+  -1 as neg_one -> -neg_one
+  a -> a
+}

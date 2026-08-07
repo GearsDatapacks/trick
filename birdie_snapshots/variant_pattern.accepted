@@ -1,0 +1,18 @@
+---
+version: 1.5.4
+title: variant_pattern
+file: ./test/trick_test.gleam
+test_name: variant_pattern_test
+---
+pub type BoolButBetter {
+  Yes
+  No
+}
+
+pub fn to_bool(value: BoolButBetter) -> Bool {
+  case value {
+    Yes -> True
+    No -> False
+  }
+}
+

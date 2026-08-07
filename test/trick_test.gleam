@@ -2149,3 +2149,769 @@ pub fn import_function_from_generated_module_test() {
     "import_function_from_generated_module",
   )
 }
+
+pub fn bool_pattern_test() {
+  trick.case_(trick.bool(False), [
+    {
+      use _ <- trick.clause(trick.bool_pattern(False))
+      trick.int(0)
+    },
+    {
+      use _ <- trick.clause(trick.bool_pattern(True))
+      trick.int(1)
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("bool_pattern")
+}
+
+pub fn bool_pattern_on_int_test() {
+  let assert Error(error) =
+    trick.case_(trick.int(0), [
+      {
+        use _ <- trick.clause(trick.bool_pattern(False))
+        trick.int(0)
+      },
+      {
+        use _ <- trick.clause(trick.bool_pattern(True))
+        trick.int(1)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_bool(), got: type_int())
+}
+
+pub fn int_pattern_test() {
+  trick.case_(trick.int(0), [
+    {
+      use _ <- trick.clause(trick.int_pattern(-58))
+      trick.int(-1)
+    },
+    {
+      use _ <- trick.clause(trick.int_pattern(10_000))
+      trick.int(1)
+    },
+    {
+      use _ <- trick.clause(trick.discard_pattern())
+      trick.int(0)
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("int_pattern")
+}
+
+pub fn int_pattern_on_float_test() {
+  let assert Error(error) =
+    trick.case_(trick.float(0.0), [
+      {
+        use _ <- trick.clause(trick.int_pattern(0))
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
+}
+
+pub fn float_pattern_test() {
+  trick.case_(trick.float(1.0), [
+    {
+      use _ <- trick.clause(trick.float_pattern(3.14))
+      trick.string("pi")
+    },
+    {
+      use _ <- trick.clause(trick.float_pattern(2.71))
+      trick.string("e")
+    },
+    {
+      use _ <- trick.clause(trick.discard_pattern())
+      trick.string("boring")
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("float_pattern")
+}
+
+pub fn float_pattern_on_int_test() {
+  let assert Error(error) =
+    trick.case_(trick.int(0), [
+      {
+        use _ <- trick.clause(trick.float_pattern(0.0))
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_float(), got: type_int())
+}
+
+pub fn string_pattern_test() {
+  trick.case_(trick.string(""), [
+    {
+      use _ <- trick.clause(trick.string_pattern("1"))
+      trick.int(1)
+    },
+    {
+      use _ <- trick.clause(trick.string_pattern("-1"))
+      trick.int(-1)
+    },
+    {
+      use _ <- trick.clause(trick.discard_pattern())
+      trick.int(0)
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("string_pattern")
+}
+
+pub fn string_pattern_on_int_test() {
+  let assert Error(error) =
+    trick.case_(trick.int(0), [
+      {
+        use _ <- trick.clause(trick.string_pattern("0"))
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_string(), got: type_int())
+}
+
+pub fn string_prefix_pattern_test() {
+  trick.case_(trick.string("Hello, Joe"), [
+    {
+      use name <- trick.clause(trick.string_prefix_pattern("Hello, ", "name"))
+      name
+    },
+    {
+      use _ <- trick.clause(trick.discard_pattern())
+      trick.string("unknown")
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("string_prefix_pattern")
+}
+
+pub fn string_prefix_pattern_on_int_test() {
+  let assert Error(error) =
+    trick.case_(trick.int(0), [
+      {
+        use _ <- trick.clause(trick.string_prefix_pattern("0", "prefix"))
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_string(), got: type_int())
+}
+
+pub fn tuple_pattern_test() {
+  trick.case_(trick.tuple([trick.int(1), trick.bool(True), trick.int(3)]), [
+    {
+      use c <- trick.clause(
+        trick.tuple_pattern({
+          use _ <- trick.pattern(trick.int_pattern(1))
+          use _ <- trick.pattern(trick.bool_pattern(False))
+          use c <- trick.pattern(trick.variable_pattern("c"))
+          trick.return_from_pattern(c)
+        }),
+      )
+      c
+    },
+    {
+      use #(a, c) <- trick.clause(
+        trick.tuple_pattern({
+          use a <- trick.pattern(trick.variable_pattern("a"))
+          use _ <- trick.pattern(trick.bool_pattern(True))
+          use c <- trick.pattern(trick.variable_pattern("c"))
+          trick.return_from_pattern(#(a, c))
+        }),
+      )
+      trick.subtract(a, c)
+    },
+    {
+      use #(a, c) <- trick.clause(
+        trick.tuple_pattern({
+          use a <- trick.pattern(trick.variable_pattern("a"))
+          use _ <- trick.pattern(trick.discard_pattern())
+          use c <- trick.pattern(trick.variable_pattern("c"))
+          trick.return_from_pattern(#(a, c))
+        }),
+      )
+      trick.add(a, c)
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("tuple_pattern")
+}
+
+pub fn tuple_pattern_on_list_test() {
+  let assert Error(error) =
+    trick.case_(trick.list([trick.int(1), trick.int(2), trick.int(3)]), [
+      {
+        use _ <- trick.clause(
+          trick.tuple_pattern({
+            use _ <- trick.pattern(trick.int_pattern(1))
+            use _ <- trick.pattern(trick.int_pattern(2))
+            use _ <- trick.pattern(trick.int_pattern(3))
+            trick.return_from_pattern(Nil)
+          }),
+        )
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error
+    == trick.TypeMismatch(
+      expected: trick.Tuple([type_int(), type_int(), type_int()]),
+      got: type_list(type_int()),
+    )
+}
+
+pub fn tuple_pattern_on_wrong_tuple_test() {
+  let assert Error(error) =
+    trick.case_(
+      trick.tuple([trick.int(1), trick.float(2.0), trick.string("3")]),
+      [
+        {
+          use _ <- trick.clause(
+            trick.tuple_pattern({
+              use _ <- trick.pattern(trick.int_pattern(1))
+              use _ <- trick.pattern(trick.float_pattern(2.0))
+              use _ <- trick.pattern(trick.int_pattern(3))
+              trick.return_from_pattern(Nil)
+            }),
+          )
+          trick.bool(True)
+        },
+        {
+          use _ <- trick.clause(trick.discard_pattern())
+          trick.bool(False)
+        },
+      ],
+    )
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_string())
+}
+
+pub fn list_pattern_test() {
+  trick.case_(trick.list([trick.int(1), trick.int(2), trick.int(3)]), [
+    {
+      use #(b, c) <- trick.clause(
+        trick.list_pattern({
+          use _ <- trick.pattern(trick.int_pattern(1))
+          use b <- trick.pattern(trick.variable_pattern("b"))
+          use c <- trick.pattern(trick.variable_pattern("c"))
+          trick.return_from_pattern(#(b, c))
+        }),
+      )
+      trick.tuple([trick.add(b, c), trick.list([])])
+    },
+    {
+      use #(a, rest) <- trick.clause(
+        trick.list_pattern({
+          use a <- trick.pattern(trick.variable_pattern("a"))
+          use rest <- trick.tail(trick.variable_pattern("rest"))
+          #(a, rest)
+        }),
+      )
+      trick.tuple([a, rest])
+    },
+    {
+      use list <- trick.clause(trick.variable_pattern("list"))
+      trick.tuple([trick.int(0), list])
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("list_pattern")
+}
+
+pub fn list_pattern_with_different_element_types_test() {
+  let assert Error(error) =
+    trick.case_(trick.list([]), [
+      {
+        use _ <- trick.clause(
+          trick.list_pattern({
+            use _ <- trick.pattern(trick.int_pattern(1))
+            use _ <- trick.pattern(trick.float_pattern(2.0))
+            use _ <- trick.tail(trick.discard_pattern())
+            trick.return_from_pattern(Nil)
+          }),
+        )
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
+}
+
+pub fn list_pattern_on_tuple_test() {
+  let assert Error(error) =
+    trick.case_(trick.tuple([trick.int(1), trick.int(2), trick.int(3)]), [
+      {
+        use _ <- trick.clause(
+          trick.list_pattern({
+            use _ <- trick.pattern(trick.int_pattern(1))
+            use _ <- trick.pattern(trick.int_pattern(2))
+            use _ <- trick.tail(trick.discard_pattern())
+            trick.return_from_pattern(Nil)
+          }),
+        )
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error
+    == trick.TypeMismatch(
+      expected: type_list(type_int()),
+      got: trick.Tuple([type_int(), type_int(), type_int()]),
+    )
+}
+
+pub fn list_pattern_on_wrong_list_test() {
+  let assert Error(error) =
+    trick.case_(
+      trick.list([trick.float(1.0), trick.float(2.0), trick.float(3.0)]),
+      [
+        {
+          use _ <- trick.clause(
+            trick.list_pattern({
+              use _ <- trick.pattern(trick.int_pattern(1))
+              use _ <- trick.pattern(trick.int_pattern(2))
+              use _ <- trick.tail(trick.discard_pattern())
+              trick.return_from_pattern(Nil)
+            }),
+          )
+          trick.bool(True)
+        },
+        {
+          use _ <- trick.clause(trick.discard_pattern())
+          trick.bool(False)
+        },
+      ],
+    )
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_int(), got: type_float())
+}
+
+pub fn assignment_pattern_test() {
+  trick.case_(trick.int(1), [
+    {
+      use #(_, zero) <- trick.clause(trick.assignment_pattern(
+        trick.int_pattern(0),
+        "zero",
+      ))
+      trick.add(zero, trick.int(1))
+    },
+    {
+      use #(_, neg_one) <- trick.clause(trick.assignment_pattern(
+        trick.int_pattern(-1),
+        "neg_one",
+      ))
+      trick.negate_int(neg_one)
+    },
+
+    {
+      use a <- trick.clause(trick.variable_pattern("a"))
+      a
+    },
+  ])
+  |> trick.expression_to_string
+  |> unwrap
+  |> birdie.snap("assignment_pattern")
+}
+
+pub fn assignment_pattern_on_wrong_type_test() {
+  let assert Error(error) =
+    trick.case_(trick.int(0), [
+      {
+        use _ <- trick.clause(trick.assignment_pattern(
+          trick.float_pattern(0.0),
+          "x",
+        ))
+        trick.bool(True)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.bool(False)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_float(), got: type_int())
+}
+
+pub fn variant_pattern_test() {
+  {
+    use bool_but_better <- trick.custom_type("BoolButBetter", trick.Public)
+    use yes <- trick.constructor("Yes", [])
+    use no <- trick.constructor("No", [])
+    use <- trick.end_custom_type
+
+    use _ <- trick.function("to_bool", trick.Public, {
+      use value <- trick.parameter("value", bool_but_better)
+      trick.function_body(
+        trick.expression(
+          trick.case_(value, [
+            {
+              use _ <- trick.clause(trick.variant_pattern(yes))
+              trick.bool(True)
+            },
+            {
+              use _ <- trick.clause(trick.variant_pattern(no))
+              trick.bool(False)
+            },
+          ]),
+        ),
+      )
+    })
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("variant_pattern")
+}
+
+pub fn variant_pattern_on_wrong_type_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("BoolButBetter", trick.Public)
+      use yes <- trick.constructor("Yes", [])
+      use no <- trick.constructor("No", [])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function("to_bool", trick.Public, {
+        use value <- trick.parameter("value", trick.bool_type())
+        trick.function_body(
+          trick.expression(
+            trick.case_(value, [
+              {
+                use _ <- trick.clause(trick.variant_pattern(yes))
+                trick.bool(True)
+              },
+              {
+                use _ <- trick.clause(trick.variant_pattern(no))
+                trick.bool(False)
+              },
+            ]),
+          ),
+        )
+      })
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.TypeMismatch(
+      expected: trick.Custom(
+        module: "module",
+        name: "BoolButBetter",
+        generics: [],
+        shared_fields: dict.new(),
+      ),
+      got: type_bool(),
+    )
+}
+
+pub fn constructor_pattern_test() {
+  {
+    use person_type <- trick.custom_type("Person", trick.Public)
+    use adult <- trick.constructor("Adult", [
+      trick.Field(Some("name"), trick.string_type()),
+      trick.Field(Some("job"), trick.string_type()),
+      trick.Field(Some("age"), trick.int_type()),
+    ])
+    use child <- trick.constructor("Child", [
+      trick.Field(Some("name"), trick.string_type()),
+      trick.Field(Some("age"), trick.int_type()),
+      trick.Field(Some("favourite_toy"), trick.string_type()),
+    ])
+    use <- trick.end_custom_type
+
+    use _ <- trick.function("match", trick.Public, {
+      use person <- trick.parameter("person", person_type)
+      trick.function_body(
+        trick.expression(
+          trick.case_(person, [
+            {
+              use _ <- trick.clause(
+                trick.constructor_pattern(adult, {
+                  use _ <- trick.labelled_pattern(
+                    "name",
+                    trick.string_pattern("Louis"),
+                  )
+                  use _ <- trick.labelled_pattern(
+                    "job",
+                    trick.string_pattern("Programmer"),
+                  )
+                  use <- trick.ignore_fields
+                  Nil
+                }),
+              )
+              trick.string("Creator of Gleam")
+            },
+            {
+              use #(toy, name) <- trick.clause(
+                trick.constructor_pattern(child, {
+                  use _ <- trick.pattern(trick.int_pattern(12))
+                  use toy <- trick.labelled_pattern(
+                    "favourite_toy",
+                    trick.variable_pattern("toy"),
+                  )
+                  use name <- trick.labelled_pattern(
+                    "name",
+                    trick.variable_pattern("name"),
+                  )
+                  trick.return_from_pattern(#(toy, name))
+                }),
+              )
+              trick.concatenate(name, toy)
+            },
+            {
+              use _ <- trick.clause(trick.discard_pattern())
+              trick.string("Unknown")
+            },
+          ]),
+        ),
+      )
+    })
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("constructor_pattern")
+}
+
+pub fn constructor_pattern_on_wrong_type_test() {
+  let assert Error(error) =
+    {
+      use person_type <- trick.custom_type("Person", trick.Public)
+      use adult <- trick.constructor("Adult", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("job"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+      ])
+      use _ <- trick.constructor("Child", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+        trick.Field(Some("favourite_toy"), trick.string_type()),
+      ])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function("match", trick.Public, {
+        use person <- trick.parameter("person", trick.list_type(person_type))
+        trick.function_body(
+          trick.expression(
+            trick.case_(person, [
+              {
+                use _ <- trick.clause(
+                  trick.constructor_pattern(adult, {
+                    use _ <- trick.labelled_pattern(
+                      "name",
+                      trick.string_pattern("Louis"),
+                    )
+                    use _ <- trick.labelled_pattern(
+                      "job",
+                      trick.string_pattern("Programmer"),
+                    )
+                    use <- trick.ignore_fields
+                    Nil
+                  }),
+                )
+                trick.bool(True)
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.bool(False)
+              },
+            ]),
+          ),
+        )
+      })
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  let type_ =
+    trick.Custom(
+      module: "module",
+      name: "Person",
+      generics: [],
+      shared_fields: dict.from_list([
+        #("name", trick.Custom("gleam", "String", [], dict.from_list([]))),
+      ]),
+    )
+  assert error == trick.TypeMismatch(expected: type_, got: type_list(type_))
+}
+
+pub fn constructor_pattern_missing_parameter_test() {
+  let assert Error(error) =
+    {
+      use person_type <- trick.custom_type("Person", trick.Public)
+      use adult <- trick.constructor("Adult", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("job"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+      ])
+      use _ <- trick.constructor("Child", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+        trick.Field(Some("favourite_toy"), trick.string_type()),
+      ])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function("match", trick.Public, {
+        use person <- trick.parameter("person", trick.list_type(person_type))
+        trick.function_body(
+          trick.expression(
+            trick.case_(person, [
+              {
+                use _ <- trick.clause(
+                  trick.constructor_pattern(adult, {
+                    use _ <- trick.labelled_pattern(
+                      "name",
+                      trick.string_pattern("Louis"),
+                    )
+                    use _ <- trick.labelled_pattern(
+                      "job",
+                      trick.string_pattern("Programmer"),
+                    )
+                    trick.return_from_pattern(Nil)
+                  }),
+                )
+                trick.bool(True)
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.bool(False)
+              },
+            ]),
+          ),
+        )
+      })
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.IncorrectNumberOfArguments(expected: 3, got: 2)
+}
+
+pub fn constructor_pattern_duplicate_label_test() {
+  let assert Error(error) =
+    {
+      use person_type <- trick.custom_type("Person", trick.Public)
+      use adult <- trick.constructor("Adult", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("job"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+      ])
+      use _ <- trick.constructor("Child", [
+        trick.Field(Some("name"), trick.string_type()),
+        trick.Field(Some("age"), trick.int_type()),
+        trick.Field(Some("favourite_toy"), trick.string_type()),
+      ])
+      use <- trick.end_custom_type
+
+      use _ <- trick.function("match", trick.Public, {
+        use person <- trick.parameter("person", trick.list_type(person_type))
+        trick.function_body(
+          trick.expression(
+            trick.case_(person, [
+              {
+                use _ <- trick.clause(
+                  trick.constructor_pattern(adult, {
+                    use _ <- trick.labelled_pattern(
+                      "name",
+                      trick.string_pattern("Louis"),
+                    )
+                    use _ <- trick.labelled_pattern(
+                      "job",
+                      trick.string_pattern("Programmer"),
+                    )
+                    use _ <- trick.labelled_pattern(
+                      "name",
+                      trick.variable_pattern("name"),
+                    )
+                    trick.return_from_pattern(Nil)
+                  }),
+                )
+                trick.bool(True)
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.bool(False)
+              },
+            ]),
+          ),
+        )
+      })
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateLabel("name")
+}
+
+pub fn case_with_different_branch_types_test() {
+  let assert Error(error) =
+    trick.case_(trick.int(0), [
+      {
+        use _ <- trick.clause(trick.int_pattern(0))
+        trick.bool(False)
+      },
+      {
+        use _ <- trick.clause(trick.discard_pattern())
+        trick.int(1)
+      },
+    ])
+    |> trick.expression_to_string
+
+  assert error == trick.TypeMismatch(expected: type_bool(), got: type_int())
+}

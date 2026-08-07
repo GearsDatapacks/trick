@@ -679,9 +679,17 @@ fn unify(
   a: ConcreteType,
   with b: ConcreteType,
 ) -> Result(#(State, ConcreteType), Error) {
-  let a = unwrap_type(state, a)
-  let b = unwrap_type(state, b)
+  let a = deep_unwrap(state, a)
+  let b = deep_unwrap(state, b)
 
+  do_unify(state, a, b)
+}
+
+fn do_unify(
+  state: State,
+  a: ConcreteType,
+  b: ConcreteType,
+) -> Result(#(State, ConcreteType), Error) {
   use <- bool.guard(a == b, Ok(#(state, a)))
 
   let mismatch = TypeMismatch(expected: b, got: a)
@@ -706,7 +714,7 @@ fn unify(
             list.try_fold(generics, #(state, []), fn(acc, pair) {
               let #(state, generics) = acc
               let #(a, b) = pair
-              case unify(state, a, b) {
+              case do_unify(state, a, b) {
                 Ok(#(state, type_)) -> Ok(#(state, [type_, ..generics]))
                 Error(error) -> Error(error)
               }
@@ -729,7 +737,7 @@ fn unify(
             list.try_fold(parameters, #(state, []), fn(acc, pair) {
               let #(state, parameters) = acc
               let #(a, b) = pair
-              case unify(state, a, b) {
+              case do_unify(state, a, b) {
                 Ok(#(state, type_)) -> Ok(#(state, [type_, ..parameters]))
                 Error(error) -> Error(error)
               }
@@ -737,7 +745,7 @@ fn unify(
           case parameters {
             Error(error) -> Error(error)
             Ok(#(state, parameters)) ->
-              case unify(state, r1, r2) {
+              case do_unify(state, r1, r2) {
                 Error(error) -> Error(error)
                 Ok(#(state, return)) ->
                   Ok(#(state, Function(list.reverse(parameters), return, None)))
@@ -5191,8 +5199,8 @@ pub fn case_(
       use #(state, clause) <- result.try(clause.compile(state))
       use #(state, _) <- result.try(unify(
         state,
-        clause.pattern.type_,
         subject.type_,
+        with: clause.pattern.type_,
       ))
       use #(state, _) <- result.try(unify(state, clause.body.type_, return_type))
       Ok(#(
@@ -5843,7 +5851,7 @@ pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
 /// 
 ///   use is_gleam_creator <- trick.function("is_gleam_creator", trick.Public, {
 ///     use person <- trick.parameter("person", person_type)
-///     trick.function_body(trick.expresson(trick.case_(person, [
+///     trick.function_body(trick.expression(trick.case_(person, [
 ///       {
 ///         use _ <- trick.clause(trick.constructor_pattern(person_constructor, {
 ///           use _ <- trick.labelled_pattern(

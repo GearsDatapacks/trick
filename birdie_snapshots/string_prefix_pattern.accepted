@@ -1,0 +1,10 @@
+---
+version: 1.5.4
+title: string_prefix_pattern
+file: ./test/trick_test.gleam
+test_name: string_prefix_pattern_test
+---
+case "Hello, Joe" {
+  "Hello, " <> name -> name
+  _ -> "unknown"
+}

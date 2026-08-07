@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: string_pattern
+file: ./test/trick_test.gleam
+test_name: string_pattern_test
+---
+case "" {
+  "1" -> 1
+  "-1" -> -1
+  _ -> 0
+}

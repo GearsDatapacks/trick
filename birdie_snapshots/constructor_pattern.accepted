@@ -1,0 +1,19 @@
+---
+version: 1.5.4
+title: constructor_pattern
+file: ./test/trick_test.gleam
+test_name: constructor_pattern_test
+---
+pub type Person {
+  Adult(name: String, job: String, age: Int)
+  Child(name: String, age: Int, favourite_toy: String)
+}
+
+pub fn match(person: Person) -> String {
+  case person {
+    Adult(name: "Louis", job: "Programmer", ..) -> "Creator of Gleam"
+    Child(12, favourite_toy: toy, name: name) -> name <> toy
+    _ -> "Unknown"
+  }
+}
+

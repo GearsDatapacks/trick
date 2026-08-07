@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: int_pattern
+file: ./test/trick_test.gleam
+test_name: int_pattern_test
+---
+case 0 {
+  -58 -> -1
+  10000 -> 1
+  _ -> 0
+}

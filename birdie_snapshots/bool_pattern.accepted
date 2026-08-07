@@ -1,0 +1,10 @@
+---
+version: 1.5.4
+title: bool_pattern
+file: ./test/trick_test.gleam
+test_name: bool_pattern_test
+---
+case False {
+  False -> 0
+  True -> 1
+}

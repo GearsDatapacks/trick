@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: float_pattern
+file: ./test/trick_test.gleam
+test_name: float_pattern_test
+---
+case 1.0 {
+  3.14 -> "pi"
+  2.71 -> "e"
+  _ -> "boring"
+}
