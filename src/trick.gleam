@@ -5663,7 +5663,7 @@ pub fn string_pattern(value: String) -> Pattern(Nil) {
       state,
       Compiled(
         document: doc.from_string(escape_string_literal(value)),
-        type_: type_float(),
+        type_: type_string(),
         precedence: precedence_unit,
       ),
       Nil,
