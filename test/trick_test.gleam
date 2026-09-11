@@ -3248,3 +3248,126 @@ pub fn let_assert_with_wrong_pattern_type_test() {
       got: trick.Tuple([type_int(), type_int()]),
     )
 }
+
+pub fn duplicate_function_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "wibble",
+        trick.Public,
+        trick.function_body(trick.expression(trick.nil())),
+      )
+
+      use _ <- trick.function(
+        "wibble",
+        trick.Public,
+        trick.function_body(trick.expression(trick.nil())),
+      )
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateDefinition("wibble")
+}
+
+pub fn duplicate_constant_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.constant("wibble", trick.Public, trick.int(1))
+
+      use _ <- trick.constant("wibble", trick.Public, trick.int(1))
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateDefinition("wibble")
+}
+
+pub fn function_with_same_name_as_constant_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.constant("wibble", trick.Public, trick.int(1))
+
+      use _ <- trick.function(
+        "wibble",
+        trick.Public,
+        trick.function_body(trick.expression(trick.nil())),
+      )
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateDefinition("wibble")
+}
+
+pub fn duplicate_constructor_in_same_type_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Public)
+      use _ <- trick.constructor("Wibble", [])
+      use _ <- trick.constructor("Wibble", [trick.Field(None, trick.int_type())])
+      use <- trick.end_custom_type
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateDefinition("Wibble")
+}
+
+pub fn duplicate_constructor_across_types_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Public)
+      use _ <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+
+      use _ <- trick.custom_type("Wobble", trick.Public)
+      use _ <- trick.constructor("Wibble", [trick.Field(None, trick.int_type())])
+      use <- trick.end_custom_type
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateDefinition("Wibble")
+}
+
+pub fn duplicate_custom_type_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Public)
+      use _ <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+
+      use _ <- trick.custom_type("Wibble", trick.Public)
+      use _ <- trick.constructor("Wobble", [trick.Field(None, trick.int_type())])
+      use <- trick.end_custom_type
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateDefinition("Wibble")
+}
+
+pub fn duplicate_import_test() {
+  let assert Ok(module1) =
+    trick.define_module("wobble", trick.define_values([]))
+  let assert Ok(module2) =
+    trick.define_module("wibble/wobble", trick.define_values([]))
+
+  let assert Error(error) =
+    {
+      use _ <- trick.import_(module1)
+      use _ <- trick.import_(module2)
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateImport("wobble")
+}

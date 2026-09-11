@@ -273,6 +273,8 @@ pub type Error {
   UnexpectedGenericType(module: String, name: String)
   ExpectedGenericType(module: String, name: String)
   PatternDoesNotAlwaysMatch
+  DuplicateDefinition(name: String)
+  DuplicateImport(String)
 }
 
 /// The expected case of the name for a definition.
@@ -546,6 +548,9 @@ type State {
     used_type_variable_names: Set(String),
     interface: ModuleInterface,
     type_info: Dict(#(String, String), TypeInfo),
+    top_level_values: Set(String),
+    types: Set(String),
+    imported_modules: Set(String),
   )
 }
 
@@ -972,6 +977,51 @@ fn define_type(
   )
 }
 
+fn check_value(
+  state: State,
+  name: String,
+  continue: fn(State) -> Result(a, Error),
+) -> Result(a, Error) {
+  case set.contains(state.top_level_values, name) {
+    True -> Error(DuplicateDefinition(name))
+    False ->
+      continue(
+        State(
+          ..state,
+          top_level_values: set.insert(state.top_level_values, name),
+        ),
+      )
+  }
+}
+
+fn check_type(
+  state: State,
+  name: String,
+  continue: fn(State) -> Result(a, Error),
+) -> Result(a, Error) {
+  case set.contains(state.types, name) {
+    True -> Error(DuplicateDefinition(name))
+    False -> continue(State(..state, types: set.insert(state.types, name)))
+  }
+}
+
+fn check_import(
+  state: State,
+  name: String,
+  continue: fn(State) -> Result(a, Error),
+) -> Result(a, Error) {
+  case set.contains(state.imported_modules, name) {
+    True -> Error(DuplicateImport(name))
+    False ->
+      continue(
+        State(
+          ..state,
+          imported_modules: set.insert(state.imported_modules, name),
+        ),
+      )
+  }
+}
+
 /// Returns the `Int` type.
 ///
 pub fn int_type() -> Type(NoParameters) {
@@ -1221,6 +1271,9 @@ fn new_state(module_name: String) -> State {
       type_info: dict.new(),
     ),
     type_info: dict.new(),
+    top_level_values: set.new(),
+    types: set.new(),
+    imported_modules: set.new(),
   )
 }
 
@@ -3261,6 +3314,8 @@ pub fn function(
   use state <- Module
 
   use _ <- result.try(check_name_case(name, SnakeCase))
+  use state <- check_value(state, name)
+
   let #(state, return_type) = next_unbound(state)
 
   use #(state, function) <- result.try(
@@ -3338,11 +3393,10 @@ pub fn function(
   let function_name =
     instantiated(doc.from_string(name), type_, precedence_unit)
 
-  use #(state, rest) <- result.try(continue(function_name).compile(state))
-
+  let state = define_value(state, name, type_, publicity)
   let #(state, return_annotation) = print_type(state, return_type)
 
-  let state = define_value(state, name, type_, publicity)
+  use #(state, rest) <- result.try(continue(function_name).compile(state))
 
   Ok(#(
     state,
@@ -3416,6 +3470,8 @@ pub fn constant(
   use state <- Module
 
   use _ <- result.try(check_name_case(name, SnakeCase))
+  use state <- check_value(state, name)
+
   use #(state, value) <- result.try(value.compile(state))
 
   let #(state, type_) = generalise(state, value.type_)
@@ -3423,11 +3479,11 @@ pub fn constant(
   let constant_name =
     instantiated(doc.from_string(name), type_, precedence_unit)
 
-  use #(state, rest) <- result.try(continue(constant_name).compile(state))
-
   let #(state, annotation) = print_type(state, type_)
 
   let state = define_value(state, name, type_, publicity)
+
+  use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
   Ok(#(
     state,
@@ -3992,6 +4048,8 @@ pub fn custom_type(
   use state <- Module
 
   use _ <- result.try(check_name_case(name, PascalCase))
+  use state <- check_type(state, name)
+
   let #(state, unbound) = next_unbound(state)
 
   let info =
@@ -4145,12 +4203,14 @@ pub fn constructor(
 ) -> CustomType(NoParameters) {
   use state, info <- CustomType
 
+  use _ <- result.try(check_name_case(name, PascalCase))
+  use state <- check_value(state, name)
+
   use state <- result.try(case info.unified {
     True -> Ok(state)
     False -> unify_custom_type(state, info)
   })
 
-  use _ <- result.try(check_name_case(name, PascalCase))
   use #(field_map_fields, arity) <- result.try(
     list.try_fold(fields, #(dict.new(), 0), fn(pair, parameter) {
       let #(map, index) = pair
@@ -4649,6 +4709,9 @@ pub fn import_(
 ) -> Module {
   use state <- Module
   let assert Ok(last) = list.last(string.split(module.name, "/"))
+
+  use state <- check_import(state, last)
+
   let name = ModuleName(name: last, interface: module)
   let state =
     State(..state, type_info: dict.merge(module.type_info, state.type_info))

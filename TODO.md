@@ -23,7 +23,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 - Importing constructors
 
 - Ensure types are correct if user accidentally shadows a variable
-- Prevent generation of duplicate constructors, functions, constants, types, and imports
 - Proper type printing
 - Prevent referencing private types in public API
 
