@@ -1,0 +1,15 @@
+---
+version: 1.5.4
+title: use_imported_constructor_in_pattern
+file: ./test/trick_test.gleam
+test_name: use_imported_constructor_in_pattern_test
+---
+import gleam/option
+
+pub fn unwrap(option: option.Option(a), fallback: a) -> a {
+  case option {
+    option.Some(value) -> value
+    option.None -> fallback
+  }
+}
+

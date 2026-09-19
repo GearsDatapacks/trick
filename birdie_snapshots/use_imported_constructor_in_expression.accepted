@@ -1,0 +1,15 @@
+---
+version: 1.5.4
+title: use_imported_constructor_in_expression
+file: ./test/trick_test.gleam
+test_name: use_imported_constructor_in_expression_test
+---
+import gleam/option
+
+pub fn map(option: option.Option(a), function: fn(a) -> b) -> option.Option(b) {
+  case option {
+    option.Some(value) -> option.Some(function(value))
+    option.None -> option.None
+  }
+}
+

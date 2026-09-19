@@ -3371,3 +3371,110 @@ pub fn duplicate_import_test() {
 
   assert error == trick.DuplicateImport("wobble")
 }
+
+pub fn use_imported_constructor_in_pattern_test() {
+  let assert Ok(option_module) =
+    trick.define_module("gleam/option", {
+      use _ <- trick.define_custom_type("Option")
+      use a <- trick.define_type_parameter("a")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+        trick.DefinedConstructor("None", []),
+      ])
+      trick.define_values([])
+    })
+
+  {
+    use imported_option <- trick.import_(option_module)
+    let option_type = trick.imported_generic_type(imported_option, "Option")
+    let some = trick.imported_constuctor(imported_option, "Some")
+    let none = trick.imported_constuctor(imported_option, "None")
+
+    use _ <- trick.function("unwrap", trick.Public, {
+      use option <- trick.parameter(
+        "option",
+        trick.with_generics(option_type, [trick.generic("a")]),
+      )
+      use fallback <- trick.parameter("fallback", trick.generic("a"))
+      trick.function_body(
+        trick.expression(
+          trick.case_(option, [
+            {
+              use value <- trick.clause(
+                trick.constructor_pattern(some, {
+                  use value <- trick.pattern(trick.variable_pattern("value"))
+                  trick.return_from_pattern(value)
+                }),
+              )
+              value
+            },
+            {
+              use _ <- trick.clause(trick.variant_pattern(none))
+              fallback
+            },
+          ]),
+        ),
+      )
+    })
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("use_imported_constructor_in_pattern")
+}
+
+pub fn use_imported_constructor_in_expression_test() {
+  let assert Ok(option_module) =
+    trick.define_module("gleam/option", {
+      use _ <- trick.define_custom_type("Option")
+      use a <- trick.define_type_parameter("a")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+        trick.DefinedConstructor("None", []),
+      ])
+      trick.define_values([])
+    })
+
+  {
+    use imported_option <- trick.import_(option_module)
+    let option_type = trick.imported_generic_type(imported_option, "Option")
+    let some = trick.imported_constuctor(imported_option, "Some")
+    let none = trick.imported_constuctor(imported_option, "None")
+
+    use _ <- trick.function("map", trick.Public, {
+      use option <- trick.parameter(
+        "option",
+        trick.with_generics(option_type, [trick.generic("a")]),
+      )
+      use function <- trick.parameter(
+        "function",
+        trick.function_type([trick.generic("a")], trick.generic("b")),
+      )
+      trick.function_body(
+        trick.expression(
+          trick.case_(option, [
+            {
+              use value <- trick.clause(
+                trick.constructor_pattern(some, {
+                  use value <- trick.pattern(trick.variable_pattern("value"))
+                  trick.return_from_pattern(value)
+                }),
+              )
+              trick.call(trick.construct(some), [trick.call(function, [value])])
+            },
+            {
+              use _ <- trick.clause(trick.variant_pattern(none))
+              trick.construct(none)
+            },
+          ]),
+        ),
+      )
+    })
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("use_imported_constructor_in_expression")
+}

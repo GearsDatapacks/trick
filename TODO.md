@@ -20,7 +20,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 - Aliased imports
 - Opaque types
 - Importing types in module interfaces
-- Importing constructors
 
 - Ensure types are correct if user accidentally shadows a variable
 - Proper type printing

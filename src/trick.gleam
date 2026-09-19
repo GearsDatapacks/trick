@@ -274,7 +274,8 @@ pub type Error {
   ExpectedGenericType(module: String, name: String)
   PatternDoesNotAlwaysMatch
   DuplicateDefinition(name: String)
-  DuplicateImport(String)
+  DuplicateImport(local_name: String)
+  ModuleDoesNotHaveConstructor(module: String, name: String)
 }
 
 /// The expected case of the name for a definition.
@@ -950,15 +951,32 @@ fn define_value(
   name: String,
   type_: ConcreteType,
   publicity: Publicity,
+  constructor: Option(Constructor),
 ) -> State {
   use <- bool.guard(publicity == Private, state)
-  State(
-    ..state,
-    interface: ModuleInterface(
-      ..state.interface,
-      values: dict.insert(state.interface.values, name, type_),
-    ),
-  )
+  case constructor {
+    Some(constructor) ->
+      State(
+        ..state,
+        interface: ModuleInterface(
+          ..state.interface,
+          values: dict.insert(state.interface.values, name, type_),
+          constructors: dict.insert(
+            state.interface.constructors,
+            name,
+            constructor,
+          ),
+        ),
+      )
+    None ->
+      State(
+        ..state,
+        interface: ModuleInterface(
+          ..state.interface,
+          values: dict.insert(state.interface.values, name, type_),
+        ),
+      )
+  }
 }
 
 fn define_type(
@@ -1269,6 +1287,7 @@ fn new_state(module_name: String) -> State {
       types: dict.new(),
       values: dict.new(),
       type_info: dict.new(),
+      constructors: dict.new(),
     ),
     type_info: dict.new(),
     top_level_values: set.new(),
@@ -3393,7 +3412,7 @@ pub fn function(
   let function_name =
     instantiated(doc.from_string(name), type_, precedence_unit)
 
-  let state = define_value(state, name, type_, publicity)
+  let state = define_value(state, name, type_, publicity, None)
   let #(state, return_annotation) = print_type(state, return_type)
 
   use #(state, rest) <- result.try(continue(function_name).compile(state))
@@ -3481,7 +3500,7 @@ pub fn constant(
 
   let #(state, annotation) = print_type(state, type_)
 
-  let state = define_value(state, name, type_, publicity)
+  let state = define_value(state, name, type_, publicity, None)
 
   use #(state, rest) <- result.try(continue(constant_name).compile(state))
 
@@ -3993,10 +4012,12 @@ type CompiledConstructor {
 pub opaque type Constructor {
   Constructor(
     name: String,
+    qualification: Option(String),
     parameters: List(ConcreteType),
     type_: ConcreteType,
     field_map: FieldMap,
   )
+  ImportError(Error)
 }
 
 /// The field of a custom type variant.
@@ -4235,6 +4256,7 @@ pub fn constructor(
   let constructor =
     Constructor(
       name:,
+      qualification: None,
       parameters: parameter_types,
       type_: info.type_,
       field_map: field_map,
@@ -4263,7 +4285,8 @@ pub fn constructor(
     ),
   ))
 
-  let state = define_value(state, name, info.type_, publicity)
+  let state =
+    define_value(state, name, info.type_, publicity, Some(constructor))
 
   Ok(#(
     state,
@@ -4323,17 +4346,35 @@ fn unify_custom_type(
 /// }
 /// ```
 ///
-pub fn construct(constructor: Constructor) -> Expression(Constant) {
-  let type_ = case constructor.parameters == [] {
-    True -> constructor.type_
-    False ->
-      Function(
-        constructor.parameters,
-        constructor.type_,
-        Some(constructor.field_map),
-      )
+pub fn construct(constructor: Constructor) -> Expression(a) {
+  use state <- Expression
+  case constructor {
+    Constructor(..) -> {
+      let type_ = case constructor.parameters == [] {
+        True -> constructor.type_
+        False ->
+          Function(
+            constructor.parameters,
+            constructor.type_,
+            Some(constructor.field_map),
+          )
+      }
+      let #(state, type_) = instantiate(state, type_)
+      let name = case constructor.qualification {
+        Some(qualification) -> qualification <> "." <> constructor.name
+        None -> constructor.name
+      }
+      Ok(#(
+        state,
+        Compiled(
+          document: doc.from_string(name),
+          type_:,
+          precedence: precedence_unit,
+        ),
+      ))
+    }
+    ImportError(error) -> Error(error)
   }
-  instantiated(doc.from_string(constructor.name), type_, precedence_unit)
 }
 
 fn concrete(type_: ConcreteType) -> Type(a) {
@@ -4651,6 +4692,7 @@ pub opaque type ModuleInterface {
     types: Dict(String, ConcreteType),
     values: Dict(String, ConcreteType),
     type_info: Dict(#(String, String), TypeInfo),
+    constructors: Dict(String, Constructor),
   )
 }
 
@@ -4859,6 +4901,70 @@ pub fn imported_value(module: ModuleName, name: String) -> Expression(a) {
   }
 }
 
+/// Imports a constructor from another module, for use in either an expression,
+/// or a pattern. For expressions, [`imported_value`](#imported_value) can be
+/// used also.
+/// 
+/// ### Examples
+///
+/// ```gleam
+/// {
+///   use option <- trick.import_(option_module)
+///   let option_type = trick.imported_generic_type(option, "Option")
+///   let some = trick.imported_constructor(option, "Some")
+///   let none = trick.imported_constructor(option, "None")
+///   use unwrap <- trick.function("unwrap", trick.Public, {
+///     let a = trick.generic("a")
+///     use option <- trick.parameter(
+///       "option",
+///       trick.with_generics(option_type, [a]),
+///     )
+///     use fallback <- trick.parameter("fallback", a)
+///     trick.function_body(trick.expression(trick.case_(option, [
+///       {
+///         use value <- trick.clause(trick.constructor_pattern(some, {
+///           use value <- trick.pattern(trick.variable_pattern("value"))
+///           trick.return_from_pattern(value)
+///         })))
+///         value
+///       },
+///       {
+///         use _ <- trick.clause(trick.variant_pattern(none)
+///         fallback
+///       },
+///     ])))
+///   })
+///   trick.end_module()
+/// }
+/// |> trick.to_string
+/// ```
+///
+/// Will generate:
+///
+/// ```gleam
+/// import gleam/option
+///
+/// pub fn unwrap(option: option.Option(a), fallback: a) -> a {
+///   case option {
+///     Some(value) -> value
+///     None -> fallback
+///   }
+/// }
+/// ```
+/// 
+pub fn imported_constuctor(module: ModuleName, name: String) -> Constructor {
+  case dict.get(module.interface.constructors, name) {
+    Ok(Constructor(..) as constructor) ->
+      Constructor(..constructor, qualification: Some(module.name))
+    Ok(ImportError(_) as error) -> error
+    Error(_) ->
+      ImportError(ModuleDoesNotHaveConstructor(
+        module: module.interface.name,
+        name:,
+      ))
+  }
+}
+
 /// The public interface of a custom type, containing only type information.
 ///
 pub opaque type CustomTypeInterface(has_parameter) {
@@ -4985,14 +5091,31 @@ pub fn define_constructors(
 
   use #(state, interface) <- result.try(continue().compile(state))
 
-  use #(state, values) <- result.try(
+  use #(state, #(values, constructors)) <- result.try(
     try_fold_with_state(
       state,
       constructors,
-      interface.values,
-      fn(state, values, constructor) {
+      #(interface.values, interface.constructors),
+      fn(state, acc, constructor) {
+        let #(values, defined_constructors) = acc
         use <- bool.lazy_guard(constructor.fields == [], fn() {
-          Ok(#(state, dict.insert(values, constructor.name, type_)))
+          Ok(#(
+            state,
+            #(
+              dict.insert(values, constructor.name, type_),
+              dict.insert(
+                defined_constructors,
+                constructor.name,
+                Constructor(
+                  name: constructor.name,
+                  qualification: None,
+                  parameters: [],
+                  type_:,
+                  field_map: FieldMap(arity: 0, fields: dict.new()),
+                ),
+              ),
+            ),
+          ))
         })
 
         use #(fields, arity) <- result.try(
@@ -5013,14 +5136,30 @@ pub fn define_constructors(
         let field_types =
           list.map(constructor.fields, fn(field) { field.type_ })
 
-        let type_ =
+        let function_type =
           Function(
             parameters: field_types,
             return: type_,
             field_map: Some(field_map),
           )
 
-        Ok(#(state, dict.insert(values, constructor.name, type_)))
+        Ok(#(
+          state,
+          #(
+            dict.insert(values, constructor.name, function_type),
+            dict.insert(
+              defined_constructors,
+              constructor.name,
+              Constructor(
+                name: constructor.name,
+                qualification: None,
+                parameters: field_types,
+                type_:,
+                field_map:,
+              ),
+            ),
+          ),
+        ))
       },
     ),
   )
@@ -5030,6 +5169,7 @@ pub fn define_constructors(
     ModuleInterface(
       ..interface,
       values:,
+      constructors:,
       types: dict.insert(interface.types, info.name, type_),
     ),
   ))
@@ -5106,6 +5246,7 @@ pub fn define_values(values: List(ValueInterface)) -> DefinedModule {
       name: state.module,
       types: dict.new(),
       type_info: dict.new(),
+      constructors: dict.new(),
     ),
   ))
 }
@@ -5161,6 +5302,7 @@ pub fn define_module(
           }),
         )
       }),
+      constructors: interface.constructors,
     )
   })
 }
@@ -6048,30 +6190,40 @@ pub fn ignore_fields(variables: fn() -> a) -> PatternList(Labelled, a) {
 /// 
 pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
   use state <- Pattern
-  use <- bool.guard(
-    constructor.parameters != [],
-    Error(IncorrectNumberOfArguments(
-      expected: 0,
-      got: list.length(constructor.parameters),
-    )),
-  )
-  let constructor_count = case unwrap_type(state, constructor.type_) {
-    Custom(module:, name:, ..) ->
-      case dict.get(state.type_info, #(module, name)) {
-        Ok(info) -> info.constructor_count
-        Error(_) -> 0
+  case constructor {
+    Constructor(..) -> {
+      use <- bool.guard(
+        constructor.parameters != [],
+        Error(IncorrectNumberOfArguments(
+          expected: 0,
+          got: list.length(constructor.parameters),
+        )),
+      )
+      let constructor_count = case unwrap_type(state, constructor.type_) {
+        Custom(module:, name:, ..) ->
+          case dict.get(state.type_info, #(module, name)) {
+            Ok(info) -> info.constructor_count
+            Error(_) -> 0
+          }
+        _ -> 0
       }
-    _ -> 0
+      let #(state, type_) = instantiate(state, constructor.type_)
+      let name = case constructor.qualification {
+        Some(qualification) -> qualification <> "." <> constructor.name
+        None -> constructor.name
+      }
+      Ok(#(
+        state,
+        CompiledPattern(
+          document: doc.from_string(name),
+          type_:,
+          always_matches: constructor_count == 1,
+        ),
+        Nil,
+      ))
+    }
+    ImportError(error) -> Error(error)
   }
-  Ok(#(
-    state,
-    CompiledPattern(
-      document: doc.from_string(constructor.name),
-      type_: constructor.type_,
-      always_matches: constructor_count == 1,
-    ),
-    Nil,
-  ))
 }
 
 /// Generates a pattern that matches on a specific constructor a custom type,
@@ -6141,6 +6293,14 @@ pub fn constructor_pattern(
 ) -> Pattern(a) {
   use state <- Pattern
 
+  use #(name, qualification, parameters, constructor_type, field_map) <- result.try(
+    case constructor {
+      Constructor(name:, qualification:, parameters:, type_:, field_map:) ->
+        Ok(#(name, qualification, parameters, type_, field_map))
+      ImportError(error) -> Error(error)
+    },
+  )
+
   use #(state, arguments, variables) <- result.try(arguments.compile(state))
 
   let #(unlabelled_arguments, labelled_arguments, spread) =
@@ -6163,8 +6323,6 @@ pub fn constructor_pattern(
     })
 
   let unlabelled_arguments = list.reverse(unlabelled_arguments)
-
-  let field_map = constructor.field_map
 
   let #(state, compiled_arguments) = case spread {
     False -> {
@@ -6251,17 +6409,10 @@ pub fn constructor_pattern(
     }
   }
 
-  use argument_types <- result.try(reorder(
-    compiled_arguments,
-    constructor.field_map,
-  ))
+  use argument_types <- result.try(reorder(compiled_arguments, field_map))
 
   let #(state, type_, parameters) =
-    instantiate_with_parameters(
-      state,
-      constructor.type_,
-      constructor.parameters,
-    )
+    instantiate_with_parameters(state, constructor_type, parameters)
 
   case list.strict_zip(argument_types, parameters) {
     Error(Nil) -> {
@@ -6301,9 +6452,14 @@ pub fn constructor_pattern(
         |> doc.join(doc.break(", ", ","))
         |> doc.append(doc.break("", ","))
 
+      let name = case qualification {
+        Some(qualification) -> qualification <> "." <> name
+        None -> name
+      }
+
       let document =
         doc.concat([
-          doc.from_string(constructor.name),
+          doc.from_string(name),
           doc.from_string("("),
           doc.soft_break,
           doc.nest(arguments, indent),
@@ -6312,7 +6468,7 @@ pub fn constructor_pattern(
         ])
         |> doc.group
 
-      let constructor_count = case unwrap_type(state, constructor.type_) {
+      let constructor_count = case unwrap_type(state, constructor_type) {
         Custom(module:, name:, ..) ->
           case dict.get(state.type_info, #(module, name)) {
             Ok(info) -> info.constructor_count
@@ -6522,7 +6678,6 @@ pub fn with_generics(
               Ok(state)
             }),
           )
-          deep_unwrap(state, instantiated)
           Ok(#(state, instantiated))
         }
         Error(_) -> {
