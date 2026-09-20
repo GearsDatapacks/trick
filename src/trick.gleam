@@ -3525,6 +3525,7 @@ pub fn constant(
 ///
 /// ### Examples
 ///
+/// ```gleam
 /// {
 ///   use <- trick.doc_comment(
 ///     "The ultimate answer to life, the universe, and everything."
@@ -3532,6 +3533,14 @@ pub fn constant(
 ///   use _ <- trick.constant("the_answer", trick.Public, trick.int(42))
 ///   trick.end_module()
 /// }
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// /// The ultimate answer to life, the universe, and everything.
+/// pub const the_answer = 42
+/// ```
 ///
 pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
   use state <- Module
