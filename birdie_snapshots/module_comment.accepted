@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: module_comment
+file: ./test/trick_test.gleam
+test_name: module_comment_test
+---
+//// A collection of useful maths constants
+//// that you might need.
+
+pub const pi: Float = 3.14
+

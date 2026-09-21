@@ -1363,6 +1363,20 @@ to its circumference",
   |> birdie.snap("doc_comment")
 }
 
+pub fn module_comment_test() {
+  {
+    use <- trick.module_comment(
+      "A collection of useful maths constants
+that you might need.",
+    )
+    use _pi <- trick.constant("pi", trick.Public, trick.float(3.14))
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("module_comment")
+}
+
 pub fn custom_type_test() {
   {
     use _type <- trick.custom_type("SomeType", trick.Public)

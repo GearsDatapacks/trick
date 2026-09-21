@@ -3521,7 +3521,8 @@ pub fn constant(
   ))
 }
 
-/// Generates a doc comment in a module.
+/// Generates a doc comment in a module, which provides documentation for a
+/// particular type or value..
 ///
 /// ### Examples
 ///
@@ -3559,6 +3560,54 @@ pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
       doc.concat([
         comment,
         doc.line,
+        definition_document(rest),
+      ]),
+    ),
+  ))
+}
+
+/// Generates a top-level module comment to provide documentation for the entire
+/// module.
+///
+/// ### Examples
+///
+/// ```gleam
+/// {
+///   use <- trick.module_comment(
+///     "This module contains constants relating to\n"
+///     <> "the Hitchhiker's Guide to the Galaxy.",
+///   )
+///   use _ <- trick.constant("the_answer", trick.Public, trick.int(42))
+///   trick.end_module()
+/// }
+/// ```
+/// 
+/// Will generate:
+/// 
+/// ```gleam
+/// //// This module contains constants relating to
+/// //// the Hitchhiker's Guide to the Galaxy.
+/// 
+/// pub const the_answer = 42
+/// ```
+///
+pub fn module_comment(comment: String, continue: fn() -> Module) -> Module {
+  use state <- Module
+
+  use #(state, rest) <- result.try(continue().compile(state))
+
+  let comment =
+    comment
+    |> string.split("\n")
+    |> list.map(fn(line) { doc.from_string("//// " <> line) })
+    |> doc.join(doc.line)
+
+  Ok(#(
+    state,
+    Definition(
+      doc.concat([
+        comment,
+        doc.lines(2),
         definition_document(rest),
       ]),
     ),
