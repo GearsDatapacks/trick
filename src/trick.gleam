@@ -276,6 +276,7 @@ pub type Error {
   DuplicateDefinition(name: String)
   DuplicateImport(local_name: String)
   ModuleDoesNotHaveConstructor(module: String, name: String)
+  PrivateTypeUsedInPublicApi(name: String, type_: ConcreteType)
 }
 
 /// The expected case of the name for a definition.
@@ -556,7 +557,11 @@ type State {
 }
 
 type TypeInfo {
-  TypeInfo(shared_fields: Dict(String, ConcreteType), constructor_count: Int)
+  TypeInfo(
+    shared_fields: Dict(String, ConcreteType),
+    constructor_count: Int,
+    publicity: Publicity,
+  )
 }
 
 fn type_int() -> ConcreteType {
@@ -3409,6 +3414,8 @@ pub fn function(
       field_map: Some(field_map),
     )
 
+  use _ <- result.try(check_private(state, name, publicity, type_))
+
   let function_name =
     instantiated(doc.from_string(name), type_, precedence_unit)
 
@@ -3492,6 +3499,7 @@ pub fn constant(
   use state <- check_value(state, name)
 
   use #(state, value) <- result.try(value.compile(state))
+  use _ <- result.try(check_private(state, name, publicity, value.type_))
 
   let #(state, type_) = generalise(state, value.type_)
 
@@ -4320,6 +4328,13 @@ pub fn constructor(
       field_map: field_map,
     )
 
+  let type_ = case parameter_types {
+    [] -> info.type_
+    _ -> Function(parameter_types, info.type_, Some(field_map))
+  }
+
+  use _ <- result.try(check_private(state, name, info.publicity, type_))
+
   let custom_type = continue(constructor)
 
   use #(state, fields) <- result.try(
@@ -4531,6 +4546,7 @@ pub fn end_custom_type(continue: fn() -> Module) -> CustomType(a) {
       TypeInfo(
         shared_fields: find_shared_fields(state, info.constructors),
         constructor_count: list.length(info.constructors),
+        publicity: info.publicity,
       ),
     )
   let state =
@@ -5143,6 +5159,7 @@ pub fn define_constructors(
         TypeInfo(
           shared_fields: find_shared_fields(state, constructors),
           constructor_count: list.length(constructors),
+          publicity: info.publicity,
         ),
       ),
     )
@@ -6884,4 +6901,50 @@ pub fn let_(
       precedence_unit,
     ),
   ))
+}
+
+fn check_private(
+  state: State,
+  name: String,
+  publicity: Publicity,
+  type_: ConcreteType,
+) -> Result(Nil, Error) {
+  case publicity {
+    Private -> Ok(Nil)
+    Public | Internal ->
+      do_check_private(state, name, deep_unwrap(state, type_))
+  }
+}
+
+fn check_results(list: List(a), f: fn(a) -> Result(_, e)) -> Result(Nil, e) {
+  case list {
+    [] -> Ok(Nil)
+    [first, ..rest] ->
+      case f(first) {
+        Error(error) -> Error(error)
+        Ok(_) -> check_results(rest, f)
+      }
+  }
+}
+
+fn do_check_private(
+  state: State,
+  value_name: String,
+  type_: ConcreteType,
+) -> Result(Nil, Error) {
+  case type_ {
+    Custom(module:, name:, generics:) ->
+      case dict.get(state.type_info, #(module, name)) {
+        Ok(info) if info.publicity == Private ->
+          Error(PrivateTypeUsedInPublicApi(value_name, type_))
+        Error(_) | Ok(_) ->
+          check_results(generics, do_check_private(state, name, _))
+      }
+    Generic(..) | Unbound(..) -> Ok(Nil)
+    Tuple(elements:) ->
+      check_results(elements, do_check_private(state, value_name, _))
+    Function(parameters:, return:, ..) ->
+      check_results(parameters, do_check_private(state, value_name, _))
+      |> result.try(fn(_) { do_check_private(state, value_name, return) })
+  }
 }

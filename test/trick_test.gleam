@@ -3492,3 +3492,220 @@ pub fn use_imported_constructor_in_expression_test() {
   |> unwrap
   |> birdie.snap("use_imported_constructor_in_expression")
 }
+
+pub fn private_type_used_in_public_constant_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Private)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.constant("wibble", trick.Public, trick.construct(wibble))
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "wibble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
+
+pub fn private_type_used_in_internal_constant_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Private)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.constant("wibble", trick.Internal, trick.construct(wibble))
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "wibble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
+
+pub fn internal_type_used_in_public_constant_test() {
+  let assert Ok(_) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Internal)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.constant("wibble", trick.Public, trick.construct(wibble))
+      trick.end_module()
+    }
+    |> trick.to_string
+}
+
+pub fn public_type_used_in_public_constant_test() {
+  let assert Ok(_) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Public)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.constant("wibble", trick.Public, trick.construct(wibble))
+      trick.end_module()
+    }
+    |> trick.to_string
+}
+
+pub fn private_type_used_in_private_constant_test() {
+  let assert Ok(_) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Private)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.constant("wibble", trick.Private, trick.construct(wibble))
+      trick.end_module()
+    }
+    |> trick.to_string
+}
+
+pub fn private_type_used_in_public_function_return_type_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Private)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.function(
+        "wibble",
+        trick.Public,
+        trick.function_body(trick.expression(trick.construct(wibble))),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "wibble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
+
+pub fn private_type_used_in_internal_function_return_type_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Private)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.function(
+        "wibble",
+        trick.Internal,
+        trick.function_body(trick.expression(trick.construct(wibble))),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "wibble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
+
+pub fn private_type_used_in_public_function_parameter_test() {
+  let assert Error(error) =
+    {
+      use wibble <- trick.custom_type("Wibble", trick.Private)
+      use _ <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.function("wibble", trick.Public, {
+        use _ <- trick.parameter("a", wibble)
+        trick.function_body(trick.expression(trick.nil()))
+      })
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "wibble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
+
+pub fn private_type_used_in_internal_function_parameter_test() {
+  let assert Error(error) =
+    {
+      use wibble <- trick.custom_type("Wibble", trick.Private)
+      use _ <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.function("wibble", trick.Internal, {
+        use _ <- trick.parameter("a", wibble)
+        trick.function_body(trick.expression(trick.nil()))
+      })
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "wibble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
+
+pub fn private_type_used_in_public_function_body_test() {
+  let assert Ok(_) =
+    {
+      use _ <- trick.custom_type("Wibble", trick.Private)
+      use wibble <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.function(
+        "wibble",
+        trick.Public,
+        trick.function_body({
+          use _ <- trick.let_(trick.discard_pattern(), trick.construct(wibble))
+          trick.expression(trick.nil())
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+}
+
+pub fn private_type_used_in_public_constructor_test() {
+  let assert Error(error) =
+    {
+      use wibble <- trick.custom_type("Wibble", trick.Private)
+      use _ <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.custom_type("Wobble", trick.Public)
+      use _ <- trick.constructor("Wobble", [trick.Field(None, wibble)])
+      use <- trick.end_custom_type
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "Wobble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
+
+pub fn private_type_used_in_internal_constructor_test() {
+  let assert Error(error) =
+    {
+      use wibble <- trick.custom_type("Wibble", trick.Private)
+      use _ <- trick.constructor("Wibble", [])
+      use <- trick.end_custom_type
+      use _ <- trick.custom_type("Wobble", trick.Internal)
+      use _ <- trick.constructor("Wobble", [trick.Field(None, wibble)])
+      use <- trick.end_custom_type
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error
+    == trick.PrivateTypeUsedInPublicApi(
+      name: "Wobble",
+      type_: trick.Custom("module", "Wibble", []),
+    )
+}
