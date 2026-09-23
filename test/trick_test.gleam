@@ -3709,3 +3709,336 @@ pub fn private_type_used_in_internal_constructor_test() {
       type_: trick.Custom("module", "Wibble", []),
     )
 }
+
+pub fn shadow_local_variable_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable("wibble", trick.int(1))
+          use _ <- trick.variable("wibble", trick.string("abc"))
+          trick.expression(trick.add(wibble, trick.int(1)))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_function_parameter_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function("main", trick.Public, {
+        use wibble <- trick.parameter("wibble", trick.int_type())
+        trick.function_body({
+          use _ <- trick.variable("wibble", trick.string("abc"))
+          trick.expression(trick.add(wibble, trick.int(1)))
+        })
+      })
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_function_test() {
+  let assert Error(error) =
+    {
+      use wibble <- trick.function(
+        "wibble",
+        trick.Public,
+        trick.function_body(trick.expression(trick.nil())),
+      )
+
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use _ <- trick.variable("wibble", trick.string("abc"))
+          trick.expression(trick.add(wibble, trick.int(1)))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_constant_test() {
+  let assert Error(error) =
+    {
+      use wibble <- trick.constant("wibble", trick.Public, trick.nil())
+
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use _ <- trick.variable("wibble", trick.string("abc"))
+          trick.expression(trick.add(wibble, trick.int(1)))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_variable_from_let_pattern_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.let_(
+            trick.tuple_pattern(trick.pattern(
+              trick.variable_pattern("wibble"),
+              trick.return_from_pattern,
+            )),
+            trick.tuple([trick.int(1)]),
+          )
+
+          use _ <- trick.variable("wibble", trick.string("abc"))
+          trick.expression(trick.add(wibble, trick.int(1)))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_variable_from_let_assert_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.let_assert(
+            trick.string_prefix_pattern("Hello", "wibble"),
+            trick.string("Hello, world!"),
+          )
+
+          use _ <- trick.variable("wibble", trick.int(1))
+          trick.expression(trick.concatenate(wibble, trick.string("bye!")))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_variable_from_case_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body(
+          trick.expression(
+            trick.case_(trick.int(1), [
+              {
+                use #(_, wibble) <- trick.clause(trick.assignment_pattern(
+                  trick.int_pattern(1),
+                  "wibble",
+                ))
+
+                trick.block({
+                  use _ <- trick.variable("wibble", trick.string("abc"))
+                  trick.expression(trick.add(wibble, trick.int(1)))
+                })
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.todo_(None)
+              },
+            ]),
+          ),
+        ),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn variable_is_not_shadowed_across_case_branches_test() {
+  let assert Ok(_) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable("wibble", trick.int(1))
+
+          trick.expression(
+            trick.case_(trick.string("Hello, world!"), [
+              {
+                use _ <- trick.clause(trick.string_prefix_pattern(
+                  "Hello",
+                  "wibble",
+                ))
+
+                trick.int(0)
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.add(wibble, trick.int(1))
+              },
+            ]),
+          )
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+}
+
+pub fn variable_is_not_shadowed_across_case_branches2_test() {
+  let assert Ok(_) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable("wibble", trick.int(1))
+
+          trick.expression(
+            trick.case_(trick.string("Hello, world!"), [
+              {
+                use _ <- trick.clause(trick.string_prefix_pattern(
+                  "Hello",
+                  "wobble",
+                ))
+
+                trick.block({
+                  use _ <- trick.variable("wibble", trick.string("wibble"))
+                  trick.expression(trick.int(0))
+                })
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.add(wibble, trick.int(1))
+              },
+            ]),
+          )
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+}
+
+pub fn variable_is_not_shadowed_outside_of_block_test() {
+  let assert Ok(_) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable("wibble", trick.int(1))
+
+          use <- trick.discard(
+            trick.expression(
+              trick.block({
+                use wibble <- trick.variable("wibble", trick.string("wibble"))
+                trick.expression(wibble)
+              }),
+            ),
+          )
+
+          trick.expression(trick.add(wibble, trick.int(1)))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+}
+
+pub fn shadow_local_variable_with_let_pattern_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable("wibble", trick.int(1))
+          use _ <- trick.let_(
+            trick.variable_pattern("wibble"),
+            trick.string("abc"),
+          )
+          trick.expression(trick.add(wibble, trick.int(1)))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_local_variable_with_let_assert_pattern_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable("wibble", trick.int(1))
+          use _ <- trick.let_assert(
+            trick.string_prefix_pattern("a", "wibble"),
+            trick.string("abc"),
+          )
+          trick.expression(trick.add(wibble, trick.int(1)))
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn shadow_local_variable_with_case_pattern_test() {
+  let assert Error(error) =
+    {
+      use _ <- trick.function(
+        "main",
+        trick.Public,
+        trick.function_body({
+          use wibble <- trick.variable("wibble", trick.int(1))
+          trick.expression(
+            trick.case_(trick.float(1.0), [
+              {
+                use _ <- trick.clause(trick.assignment_pattern(
+                  trick.float_pattern(1.0),
+                  "wibble",
+                ))
+                trick.add(wibble, trick.int(1))
+              },
+              {
+                use _ <- trick.clause(trick.discard_pattern())
+                trick.int(0)
+              },
+            ]),
+          )
+        }),
+      )
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.ShadowedVariable("wibble")
+}

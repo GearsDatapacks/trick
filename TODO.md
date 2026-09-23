@@ -21,10 +21,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 - Opaque types
 - Importing types in module interfaces
 
-- Ensure types are correct if user accidentally shadows a variable
-- Proper type printing
-- Prevent referencing private types in public API
-
 - Case expression exhaustiveness checking*
 - String prefix patterns with a binding to the prefix*
 - Alternative patterns*

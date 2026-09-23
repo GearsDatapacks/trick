@@ -277,6 +277,7 @@ pub type Error {
   DuplicateImport(local_name: String)
   ModuleDoesNotHaveConstructor(module: String, name: String)
   PrivateTypeUsedInPublicApi(name: String, type_: ConcreteType)
+  ShadowedVariable(String)
 }
 
 /// The expected case of the name for a definition.
@@ -553,6 +554,7 @@ type State {
     top_level_values: Set(String),
     types: Set(String),
     imported_modules: Set(String),
+    local_variables: Dict(String, ConcreteType),
   )
 }
 
@@ -941,14 +943,17 @@ fn do_generalise(
   }
 }
 
-fn instantiated(
-  doc: Document,
-  type_: ConcreteType,
-  precedence: Int,
-) -> Expression(_) {
+fn top_level_expression(name: String, type_: ConcreteType) -> Expression(_) {
   use state <- Expression
+  use _ <- result.try(check_variable(state, name, type_))
   let #(state, type_) = instantiate(state, type_)
-  Ok(#(state, Compiled(doc, type_, precedence)))
+  Ok(#(state, Compiled(doc.from_string(name), type_, precedence_unit)))
+}
+
+fn local_variable(name: String, type_: ConcreteType) -> Expression(_) {
+  use state <- Expression
+  use _ <- result.try(check_variable(state, name, type_))
+  Ok(#(state, Compiled(doc.from_string(name), type_, precedence_unit)))
 }
 
 fn define_value(
@@ -1298,6 +1303,29 @@ fn new_state(module_name: String) -> State {
     top_level_values: set.new(),
     types: set.new(),
     imported_modules: set.new(),
+    local_variables: dict.new(),
+  )
+}
+
+fn check_variable(
+  state: State,
+  name: String,
+  type_: ConcreteType,
+) -> Result(Nil, Error) {
+  case dict.get(state.local_variables, name) {
+    Ok(variable_type) if variable_type != type_ -> Error(ShadowedVariable(name))
+    Ok(_) | Error(_) -> Ok(Nil)
+  }
+}
+
+fn insert_local_variable(
+  state: State,
+  name: String,
+  type_: ConcreteType,
+) -> State {
+  State(
+    ..state,
+    local_variables: dict.insert(state.local_variables, name, type_),
   )
 }
 
@@ -2224,12 +2252,8 @@ pub fn variable(
     |> grouped
     |> doc.append(doc.line)
 
-  let variable_expression =
-    doc_to_expression(Compiled(
-      doc.from_string(name),
-      value.type_,
-      precedence_unit,
-    ))
+  let state = insert_local_variable(state, name, value.type_)
+  let variable_expression = local_variable(name, value.type_)
 
   let rest = continue(variable_expression)
   use #(state, rest) <- result.try(rest.compile(state))
@@ -2384,7 +2408,10 @@ pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
 ///
 pub fn block(inner: Statement) -> Expression(Variable) {
   use state <- Expression
+
+  let variables = state.local_variables
   use #(state, inner) <- result.try(inner.compile(state))
+  let state = State(..state, local_variables: variables)
 
   Ok(#(state, Compiled(block_doc(inner.document), inner.type_, precedence_unit)))
 }
@@ -2774,7 +2801,7 @@ pub fn recursive(
   let type_ =
     Function(parameters: parameter_types, return: return_type, field_map: None)
 
-  let expression = instantiated(doc.from_string(name), type_, precedence_unit)
+  let expression = top_level_expression(name, type_)
 
   let body = continue(expression)
 
@@ -2804,8 +2831,9 @@ pub fn parameter(
   use _ <- result.try(check_name_case(name, SnakeCase))
   use #(state, type_) <- result.try(type_.compile(state))
 
-  let expression = Compiled(doc.from_string(name), type_, precedence_unit)
-  let function = continue(doc_to_expression(expression))
+  let state = insert_local_variable(state, name, type_)
+  let expression = local_variable(name, type_)
+  let function = continue(expression)
 
   let parameter = Parameter(name, None, type_)
   use #(state, function) <- result.try(function.compile(
@@ -3342,6 +3370,7 @@ pub fn function(
 
   let #(state, return_type) = next_unbound(state)
 
+  let state = State(..state, local_variables: dict.new())
   use #(state, function) <- result.try(
     function.compile(state, name, return_type, []),
   )
@@ -3416,8 +3445,7 @@ pub fn function(
 
   use _ <- result.try(check_private(state, name, publicity, type_))
 
-  let function_name =
-    instantiated(doc.from_string(name), type_, precedence_unit)
+  let function_name = top_level_expression(name, type_)
 
   let state = define_value(state, name, type_, publicity, None)
   let #(state, return_annotation) = print_type(state, return_type)
@@ -3503,8 +3531,7 @@ pub fn constant(
 
   let #(state, type_) = generalise(state, value.type_)
 
-  let constant_name =
-    instantiated(doc.from_string(name), type_, precedence_unit)
+  let constant_name = top_level_expression(name, type_)
 
   let #(state, annotation) = print_type(state, type_)
 
@@ -5684,9 +5711,11 @@ pub fn clause(
 ) -> Clause {
   use state <- Clause
 
+  let variables = state.local_variables
   use #(state, pattern, pattern_variables) <- result.try(pattern.compile(state))
   let body = body(pattern_variables)
   use #(state, body) <- result.try(body.compile(state))
+  let state = State(..state, local_variables: variables)
   Ok(#(state, CompiledClause(pattern, body)))
 }
 
@@ -5840,7 +5869,8 @@ pub fn variable_pattern(name: String) -> Pattern(Expression(Variable)) {
   use state <- Pattern
   use _ <- result.try(check_name_case(name, SnakeCase))
   let #(state, type_) = next_unbound(state)
-  let expression = instantiated(doc.from_string(name), type_, precedence_unit)
+  let state = insert_local_variable(state, name, type_)
+  let expression = local_variable(name, type_)
   Ok(#(
     state,
     CompiledPattern(
@@ -6171,8 +6201,8 @@ pub fn assignment_pattern(
       doc.from_string(name),
     ])
     |> doc.group
-  let variable =
-    instantiated(doc.from_string(name), pattern.type_, precedence_unit)
+  let state = insert_local_variable(state, name, pattern.type_)
+  let variable = local_variable(name, pattern.type_)
   Ok(#(
     state,
     CompiledPattern(
@@ -6594,8 +6624,9 @@ pub fn string_prefix_pattern(
   variable_name: String,
 ) -> Pattern(Expression(Variable)) {
   use state <- Pattern
-  let variable =
-    instantiated(doc.from_string(variable_name), type_string(), precedence_unit)
+  let type_ = type_string()
+  let state = insert_local_variable(state, variable_name, type_)
+  let variable = local_variable(variable_name, type_)
   let document =
     doc.concat([
       doc.from_string(escape_string_literal(prefix)),
