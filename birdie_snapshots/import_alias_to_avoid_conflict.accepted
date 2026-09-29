@@ -1,0 +1,10 @@
+---
+version: 1.5.4
+title: import_alias_to_avoid_conflict
+file: ./test/trick_test.gleam
+test_name: import_alias_to_avoid_conflict_test
+---
+import wobble
+
+import wibble/wobble as wibble
+

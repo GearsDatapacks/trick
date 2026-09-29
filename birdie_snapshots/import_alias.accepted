@@ -1,0 +1,13 @@
+---
+version: 1.5.4
+title: import_alias
+file: ./test/trick_test.gleam
+test_name: import_alias_test
+---
+import gleam/option as maybe
+
+pub fn main() -> maybe.Option(Int) {
+  let option = maybe.Some(1)
+  maybe.map(option, fn(a: Int) { a + 1 })
+}
+

@@ -555,6 +555,7 @@ type State {
     types: Set(String),
     imported_modules: Set(String),
     local_variables: Dict(String, ConcreteType),
+    aliased_modules: Dict(String, String),
   )
 }
 
@@ -1304,6 +1305,7 @@ fn new_state(module_name: String) -> State {
     types: set.new(),
     imported_modules: set.new(),
     local_variables: dict.new(),
+    aliased_modules: dict.new(),
   )
 }
 
@@ -3708,9 +3710,12 @@ fn print_custom_type(
   let name = case module == state.module || module == "gleam" {
     True -> name
     False -> {
-      let assert Ok(module_end) = list.last(string.split(module, "/"))
-        as "string.split always returns at least one segment"
-      module_end <> "." <> name
+      let module_name = case dict.get(state.aliased_modules, module) {
+        Ok(alias) -> alias
+        Error(_) ->
+          module |> string.split("/") |> list.last |> result.unwrap(module)
+      }
+      module_name <> "." <> name
     }
   }
 
@@ -4811,7 +4816,7 @@ pub opaque type ModuleName {
 /// let assert Ok(option_module) = trick.define_module("gleam/option", ...)
 ///
 /// {
-///   use imported_option <- trick.import_(option_module)
+///   use imported_option <- trick.import_(option_module, None)
 ///   use _ <- trick.function(
 ///     "main",
 ///     trick.Public,
@@ -4848,17 +4853,39 @@ pub opaque type ModuleName {
 ///
 pub fn import_(
   module: ModuleInterface,
+  alias: Option(String),
   continue: fn(ModuleName) -> Module,
 ) -> Module {
   use state <- Module
-  let assert Ok(last) = list.last(string.split(module.name, "/"))
+  let imported_name =
+    option.unwrap(
+      alias,
+      module.name
+        |> string.split("/")
+        |> list.last
+        |> result.unwrap(module.name),
+    )
 
-  use state <- check_import(state, last)
+  use state <- check_import(state, imported_name)
 
-  let name = ModuleName(name: last, interface: module)
+  let state = case alias {
+    None -> state
+    Some(alias) ->
+      State(
+        ..state,
+        aliased_modules: dict.insert(state.aliased_modules, module.name, alias),
+      )
+  }
+
+  let name = ModuleName(name: imported_name, interface: module)
   let state =
     State(..state, type_info: dict.merge(module.type_info, state.type_info))
   use #(state, rest) <- result.try(continue(name).compile(state))
+
+  let alias_doc = case alias {
+    Some(alias) -> doc.from_string(" as " <> alias)
+    None -> doc.empty
+  }
 
   Ok(#(
     state,
@@ -4866,6 +4893,7 @@ pub fn import_(
       doc.concat([
         doc.from_string("import "),
         doc.from_string(module.name),
+        alias_doc,
         separate_definition(rest, True),
       ]),
     ),

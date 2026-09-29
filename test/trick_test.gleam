@@ -2090,7 +2090,7 @@ pub fn call_imported_function_test() {
     })
 
   {
-    use imported_option <- trick.import_(option_module)
+    use imported_option <- trick.import_(option_module, None)
 
     use _ <- trick.function(
       "main",
@@ -2138,7 +2138,7 @@ pub fn import_function_from_generated_module_test() {
 
   let wobble =
     {
-      use wibble <- trick.import_(wibble_interface)
+      use wibble <- trick.import_(wibble_interface, None)
 
       use _ <- trick.function(
         "main",
@@ -3034,7 +3034,7 @@ pub fn import_generic_type_as_not_generic_test() {
 
   let assert Error(error) =
     {
-      use option_module <- trick.import_(module_interface)
+      use option_module <- trick.import_(module_interface, None)
       use _ <- trick.function("wibble", trick.Public, {
         use value <- trick.parameter(
           "value",
@@ -3060,7 +3060,7 @@ pub fn import_non_generic_type_as_generic_test() {
 
   let assert Error(error) =
     {
-      use module <- trick.import_(module_interface)
+      use module <- trick.import_(module_interface, None)
       use _ <- trick.function("wibble", trick.Public, {
         use value <- trick.parameter(
           "value",
@@ -3376,8 +3376,8 @@ pub fn duplicate_import_test() {
 
   let assert Error(error) =
     {
-      use _ <- trick.import_(module1)
-      use _ <- trick.import_(module2)
+      use _ <- trick.import_(module1, None)
+      use _ <- trick.import_(module2, None)
 
       trick.end_module()
     }
@@ -3399,7 +3399,7 @@ pub fn use_imported_constructor_in_pattern_test() {
     })
 
   {
-    use imported_option <- trick.import_(option_module)
+    use imported_option <- trick.import_(option_module, None)
     let option_type = trick.imported_generic_type(imported_option, "Option")
     let some = trick.imported_constuctor(imported_option, "Some")
     let none = trick.imported_constuctor(imported_option, "None")
@@ -3451,7 +3451,7 @@ pub fn use_imported_constructor_in_expression_test() {
     })
 
   {
-    use imported_option <- trick.import_(option_module)
+    use imported_option <- trick.import_(option_module, None)
     let option_type = trick.imported_generic_type(imported_option, "Option")
     let some = trick.imported_constuctor(imported_option, "Some")
     let none = trick.imported_constuctor(imported_option, "None")
@@ -4041,4 +4041,91 @@ pub fn shadow_local_variable_with_case_pattern_test() {
     |> trick.to_string
 
   assert error == trick.ShadowedVariable("wibble")
+}
+
+pub fn import_alias_test() {
+  let assert Ok(option_module) =
+    trick.define_module("gleam/option", {
+      use option <- trick.define_custom_type("Option")
+      use a <- trick.define_type_parameter("a")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+        trick.DefinedConstructor("None", []),
+      ])
+      trick.define_values([
+        trick.FunctionInterface(
+          "map",
+          [
+            trick.Field(None, trick.with_generics(option, [a])),
+            trick.Field(None, trick.function_type([a], a)),
+          ],
+          trick.with_generics(option, [a]),
+        ),
+      ])
+    })
+
+  {
+    use imported_option <- trick.import_(option_module, Some("maybe"))
+
+    use _ <- trick.function(
+      "main",
+      trick.Public,
+      trick.function_body({
+        use option <- trick.variable(
+          "option",
+          trick.call(trick.imported_value(imported_option, "Some"), [
+            trick.int(1),
+          ]),
+        )
+        trick.expression(
+          trick.call(trick.imported_value(imported_option, "map"), [
+            option,
+            trick.anonymous({
+              use a <- trick.parameter("a", trick.int_type())
+              trick.function_body(trick.expression(trick.add(a, trick.int(1))))
+            }),
+          ]),
+        )
+      }),
+    )
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("import_alias")
+}
+
+pub fn import_alias_creates_conflict_test() {
+  let assert Ok(wobble) = trick.define_module("wobble", trick.define_values([]))
+
+  let assert Ok(wibble) = trick.define_module("wibble", trick.define_values([]))
+
+  let assert Error(error) =
+    {
+      use _ <- trick.import_(wobble, None)
+      use _ <- trick.import_(wibble, Some("wobble"))
+
+      trick.end_module()
+    }
+    |> trick.to_string
+
+  assert error == trick.DuplicateImport("wobble")
+}
+
+pub fn import_alias_to_avoid_conflict_test() {
+  let assert Ok(wobble) = trick.define_module("wobble", trick.define_values([]))
+
+  let assert Ok(wibble) =
+    trick.define_module("wibble/wobble", trick.define_values([]))
+
+  {
+    use _ <- trick.import_(wobble, None)
+    use _ <- trick.import_(wibble, Some("wibble"))
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("import_alias_to_avoid_conflict")
 }

@@ -17,7 +17,6 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 ### Other features
 
 - Unqualified imports
-- Aliased imports
 - Opaque types
 - Importing types in module interfaces
 
