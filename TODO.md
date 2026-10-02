@@ -18,11 +18,10 @@ Values marked with `*` are deprioritised and may be delayed until after v1.
 
 - Unqualified imports
 - Opaque types
-- Importing types in module interfaces
+- Multiple `case` subjects
 
 - Case expression exhaustiveness checking*
 - String prefix patterns with a binding to the prefix*
 - Alternative patterns*
-- Multiple `case` subjects
 - Clause guards*
 - Mutually recursive functions & types*

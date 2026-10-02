@@ -4129,3 +4129,80 @@ pub fn import_alias_to_avoid_conflict_test() {
   |> unwrap
   |> birdie.snap("import_alias_to_avoid_conflict")
 }
+
+pub fn import_type_in_interface_definition_test() {
+  let assert Ok(dynamic) =
+    trick.define_module("gleam/dynamic", {
+      use _ <- trick.define_custom_type("Dynamic")
+      use <- trick.define_constructors([])
+      trick.define_values([])
+    })
+
+  let assert Ok(decode) =
+    trick.define_module("gleam/dynamic/decode", {
+      use dynamic <- trick.define_import(dynamic)
+      trick.define_values([
+        trick.FunctionInterface(
+          name: "make_dynamic",
+          parameters: [trick.Field(None, trick.generic("a"))],
+          return_type: trick.imported_type(dynamic, "Dynamic"),
+        ),
+      ])
+    })
+
+  {
+    use decode <- trick.import_(decode, Some("decoding"))
+    use _ <- trick.import_(dynamic, None)
+    use _ <- trick.constant(
+      "make_dynamic",
+      trick.Public,
+      trick.imported_value(decode, "make_dynamic"),
+    )
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("import_type_in_interface_definition")
+}
+
+pub fn import_generic_type_in_interface_definition_test() {
+  let assert Ok(dynamic) =
+    trick.define_module("gleam/dynamic", {
+      use _ <- trick.define_custom_type("Dynamic")
+      use _ <- trick.define_type_parameter("one")
+      use _ <- trick.define_type_parameter("other")
+      use <- trick.define_constructors([])
+      trick.define_values([])
+    })
+
+  let assert Ok(decode) =
+    trick.define_module("gleam/dynamic/decode", {
+      use dynamic <- trick.define_import(dynamic)
+      trick.define_values([
+        trick.FunctionInterface(
+          name: "make_dynamic",
+          parameters: [trick.Field(None, trick.generic("a"))],
+          return_type: dynamic
+            |> trick.imported_generic_type("Dynamic")
+            |> trick.with_generics([
+              trick.generic("one"),
+              trick.generic("other"),
+            ]),
+        ),
+      ])
+    })
+
+  {
+    use decode <- trick.import_(decode, Some("decoding"))
+    use _ <- trick.import_(dynamic, None)
+    use _ <- trick.constant(
+      "make_dynamic",
+      trick.Public,
+      trick.imported_value(decode, "make_dynamic"),
+    )
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("import_generic_type_in_interface_definition")
+}

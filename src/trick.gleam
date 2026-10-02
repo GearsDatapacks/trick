@@ -4808,7 +4808,8 @@ pub opaque type ModuleName {
   ModuleName(name: String, interface: ModuleInterface)
 }
 
-/// Import a particular module so it can be used.
+/// Import a particular module so it can be used. For importing modules in module
+/// interface definitions, see [`define_import`](#define_import).
 ///
 /// ### Examples
 ///
@@ -4889,7 +4890,7 @@ pub fn import_(
 
   Ok(#(
     state,
-    Definition(
+    Import(
       doc.concat([
         doc.from_string("import "),
         doc.from_string(module.name),
@@ -7006,4 +7007,59 @@ fn do_check_private(
       check_results(parameters, do_check_private(state, value_name, _))
       |> result.try(fn(_) { do_check_private(state, value_name, return) })
   }
+}
+
+/// Defines an import for a module interface, allowing types from the imported
+/// module to be used in the module's definition. For importing types in a full
+/// code-generated module, see [`import_`](#import_).
+/// 
+/// ### Examples
+/// 
+/// ```gleam
+/// let assert Ok(option_module) = trick.define_module("gleam/option", ...)
+/// 
+/// trick.define_module("gleam/dict", {
+///   use option <- trick.define_import(option_module)
+///
+///   use dict <- trick.define_custom_type("Dict")
+///   use _ <- trick.define_type_parameter("key")
+///   use _ <- trick.define_type_parameter("value")
+///   use <- trick.define_constructors([])
+///
+///   let key = trick.generic("key")
+///   let value = trick.generic("value")
+///   let option_type = trick.imported_generic_type(option, "Option")
+///
+///   trick.define_values([trick.FunctionInterface(
+///     "upsert",
+///     [
+///       trick.Field(None, trick.with_generics(dict, [key, value])),
+///       trick.Field(None, key),
+///       trick.Field(None, trick.Function(
+///         [trick.with_generics(option_type, [value])],
+///         value,
+///       )),
+///     ],
+///     trick.with_generics(dict, [key, value]),
+///   )])
+/// })
+/// ```
+///
+pub fn define_import(
+  module: ModuleInterface,
+  continue: fn(ModuleName) -> DefinedModule,
+) -> DefinedModule {
+  use state <- DefinedModule
+  let imported_name =
+    module.name
+    |> string.split("/")
+    |> list.last
+    |> result.unwrap(module.name)
+
+  use state <- check_import(state, imported_name)
+
+  let name = ModuleName(name: imported_name, interface: module)
+  let state =
+    State(..state, type_info: dict.merge(module.type_info, state.type_info))
+  continue(name).compile(state)
 }

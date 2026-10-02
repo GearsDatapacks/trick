@@ -1,0 +1,11 @@
+---
+version: 1.5.4
+title: import_type_in_interface_definition
+file: ./test/trick_test.gleam
+test_name: import_type_in_interface_definition_test
+---
+import gleam/dynamic/decode as decoding
+import gleam/dynamic
+
+pub const make_dynamic: fn(a) -> dynamic.Dynamic = decoding.make_dynamic
+
