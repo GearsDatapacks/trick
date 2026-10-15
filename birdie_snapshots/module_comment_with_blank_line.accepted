@@ -1,0 +1,12 @@
+---
+version: 1.5.4
+title: module_comment_with_blank_line
+file: ./test/trick_test.gleam
+test_name: module_comment_with_blank_line_test
+---
+//// A collection of useful maths constants.
+////
+//// The blank line above has no trailing whitespace.
+
+pub const pi: Float = 3.14
+

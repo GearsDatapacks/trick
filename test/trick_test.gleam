@@ -1377,6 +1377,57 @@ that you might need.",
   |> birdie.snap("module_comment")
 }
 
+pub fn comment_with_blank_line_test() {
+  let comment =
+    "Here, we add one to the value of `x`.
+
+The blank line above has no trailing whitespace."
+
+  {
+    use x <- trick.variable("x", trick.int(1))
+    use <- trick.comment(comment)
+    x
+    |> trick.add(trick.int(1))
+    |> trick.expression()
+  }
+  |> trick.block()
+  |> trick.expression_to_string()
+  |> unwrap()
+  |> birdie.snap("comment_with_blank_line")
+}
+
+pub fn doc_comment_with_blank_line_test() {
+  let comment =
+    "The ratio of a circle's radius to its circumference.
+
+The blank line above has no trailing whitespace."
+
+  {
+    use <- trick.doc_comment(comment)
+    use _pi <- trick.constant("pi", trick.Internal, trick.float(3.14))
+    trick.end_module()
+  }
+  |> trick.to_string()
+  |> unwrap()
+  |> birdie.snap("doc_comment_with_blank_line")
+}
+
+pub fn module_comment_with_blank_line_test() {
+  let comment =
+    "A collection of useful maths constants.
+
+The blank line above has no trailing whitespace."
+
+  {
+    use <- trick.module_comment(comment)
+    use _pi <- trick.constant("pi", trick.Public, trick.float(3.14))
+    trick.end_module()
+  }
+  |> trick.to_string()
+  |> unwrap()
+  |> birdie.snap("module_comment_with_blank_line")
+}
+
 pub fn custom_type_test() {
   {
     use _type <- trick.custom_type("SomeType", trick.Public)
@@ -3491,6 +3542,86 @@ pub fn use_imported_constructor_in_expression_test() {
   |> trick.to_string
   |> unwrap
   |> birdie.snap("use_imported_constructor_in_expression")
+}
+
+pub fn construct_imported_constructors_with_generic_fields_test() {
+  let assert Ok(option_module) =
+    trick.define_module("gleam/option", {
+      use _ <- trick.define_custom_type("Option")
+      use a <- trick.define_type_parameter("a")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Some", [trick.Field(None, a)]),
+        trick.DefinedConstructor("None", []),
+      ])
+      trick.define_values([])
+    })
+
+  // Here, each module instantiates `Option`'s parameter with a type variable of
+  // its own, and both modules number their type variables from the same start.
+  let assert Ok(person_module) =
+    trick.define_module("person", {
+      use option <- trick.define_import(option_module)
+      let option_type = trick.imported_generic_type(option, "Option")
+      use _ <- trick.define_custom_type("Person")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Person", [
+          trick.Field(
+            Some("nickname"),
+            trick.with_generics(option_type, [trick.string_type()]),
+          ),
+        ]),
+      ])
+      trick.define_values([])
+    })
+
+  let assert Ok(pet_module) =
+    trick.define_module("pet", {
+      use option <- trick.define_import(option_module)
+      let option_type = trick.imported_generic_type(option, "Option")
+      use _ <- trick.define_custom_type("Pet")
+      use <- trick.define_constructors([
+        trick.DefinedConstructor("Pet", [
+          trick.Field(
+            Some("age"),
+            trick.with_generics(option_type, [trick.int_type()]),
+          ),
+        ]),
+      ])
+      trick.define_values([])
+    })
+
+  {
+    use option <- trick.import_(option_module, None)
+    use person <- trick.import_(person_module, None)
+    use pet <- trick.import_(pet_module, None)
+    let some = trick.imported_constuctor(option, "Some")
+    let person = trick.imported_constuctor(person, "Person")
+    let pet = trick.imported_constuctor(pet, "Pet")
+
+    use _ <- trick.function(
+      "main",
+      trick.Public,
+      trick.function_body(
+        trick.expression(
+          trick.tuple([
+            trick.call(trick.construct(person), [
+              // Here the generics resolve without issues.
+              trick.call(trick.construct(some), [trick.string("Lucy")]),
+            ]),
+            trick.call(trick.construct(pet), [
+              // Here the generics resolve without issues.
+              trick.call(trick.construct(some), [trick.int(3)]),
+            ]),
+          ]),
+        ),
+      ),
+    )
+
+    trick.end_module()
+  }
+  |> trick.to_string
+  |> unwrap
+  |> birdie.snap("construct_imported_constructors_with_generic_fields")
 }
 
 pub fn private_type_used_in_public_constant_test() {

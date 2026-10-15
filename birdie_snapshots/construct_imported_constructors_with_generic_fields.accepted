@@ -1,0 +1,14 @@
+---
+version: 1.5.4
+title: construct_imported_constructors_with_generic_fields
+file: ./test/trick_test.gleam
+test_name: construct_imported_constructors_with_generic_fields_test
+---
+import gleam/option
+import person
+import pet
+
+pub fn main() -> #(person.Person, pet.Pet) {
+  #(person.Person(option.Some("Lucy")), pet.Pet(option.Some(3)))
+}
+

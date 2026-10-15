@@ -1,0 +1,13 @@
+---
+version: 1.5.4
+title: comment_with_blank_line
+file: ./test/trick_test.gleam
+test_name: comment_with_blank_line_test
+---
+{
+  let x = 1
+  // Here, we add one to the value of `x`.
+  //
+  // The blank line above has no trailing whitespace.
+  x + 1
+}

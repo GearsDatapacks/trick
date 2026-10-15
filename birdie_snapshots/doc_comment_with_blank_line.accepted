@@ -1,0 +1,12 @@
+---
+version: 1.5.4
+title: doc_comment_with_blank_line
+file: ./test/trick_test.gleam
+test_name: doc_comment_with_blank_line_test
+---
+/// The ratio of a circle's radius to its circumference.
+///
+/// The blank line above has no trailing whitespace.
+@internal
+pub const pi: Float = 3.14
+

@@ -511,7 +511,7 @@ fn maybe_wrap(value: Compiled, precedence: Int) -> Document {
 /// The type of a value. This is different to [`ConcreteType`](#ConcreteType)
 /// in that it exists before type-checking and does not contain complete
 /// information yet.
-/// 
+///
 /// The type parameter represents whether the type is a "type constructor", and
 /// has generics which must be supplied before it can be used.
 ///
@@ -2059,7 +2059,7 @@ pub fn list(values: List(Expression(a))) -> Expression(a) {
       |> doc.join(doc.break(", ", ","))
       |> doc.prepend(doc.break("[", "["))
       |> doc.nest(indent)
-      |> doc.append(doc.break("", ", "))
+      |> doc.append(doc.break("", ","))
       |> doc.append(doc.from_string("]"))
       |> doc.group
       |> Compiled(type_list(element_type), precedence_unit),
@@ -2214,7 +2214,7 @@ pub fn echo_(
 
 /// Declares a variable in the current scope. Calls the continuing function with
 /// an expression representing the variable name.
-/// 
+///
 /// For matching more complex patterns, use [`let_`](#let_)
 ///
 /// ### Examples
@@ -2361,11 +2361,7 @@ pub fn comment(comment: String, continue: fn() -> Statement) -> Statement {
   let rest = continue()
   use #(state, rest) <- result.try(rest.compile(state))
 
-  let comment =
-    comment
-    |> string.split("\n")
-    |> list.map(fn(line) { doc.from_string("// " <> line) })
-    |> doc.join(doc.line)
+  let comment = comment_lines(comment, "//")
 
   Ok(#(
     state,
@@ -2539,7 +2535,7 @@ pub fn tuple(values: List(Expression(a))) -> Expression(a) {
       |> doc.join(doc.break(", ", ","))
       |> doc.prepend(doc.break("#(", "#("))
       |> doc.nest(indent)
-      |> doc.append(doc.break("", ", "))
+      |> doc.append(doc.break("", ","))
       |> doc.append(doc.from_string(")"))
       |> doc.group
       |> Compiled(Tuple(types), precedence_unit),
@@ -3572,9 +3568,9 @@ pub fn constant(
 ///   trick.end_module()
 /// }
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// /// The ultimate answer to life, the universe, and everything.
 /// pub const the_answer = 42
@@ -3585,11 +3581,7 @@ pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
 
   use #(state, rest) <- result.try(continue().compile(state))
 
-  let comment =
-    comment
-    |> string.split("\n")
-    |> list.map(fn(line) { doc.from_string("/// " <> line) })
-    |> doc.join(doc.line)
+  let comment = comment_lines(comment, "///")
 
   Ok(#(
     state,
@@ -3618,13 +3610,12 @@ pub fn doc_comment(comment: String, continue: fn() -> Module) -> Module {
 ///   trick.end_module()
 /// }
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// //// This module contains constants relating to
 /// //// the Hitchhiker's Guide to the Galaxy.
-/// 
 /// pub const the_answer = 42
 /// ```
 ///
@@ -3633,11 +3624,7 @@ pub fn module_comment(comment: String, continue: fn() -> Module) -> Module {
 
   use #(state, rest) <- result.try(continue().compile(state))
 
-  let comment =
-    comment
-    |> string.split("\n")
-    |> list.map(fn(line) { doc.from_string("//// " <> line) })
-    |> doc.join(doc.line)
+  let comment = comment_lines(comment, "////")
 
   Ok(#(
     state,
@@ -3656,6 +3643,21 @@ fn definition_document(definition: CompiledModule) -> Document {
     Empty -> doc.empty
     Definition(document) | Import(document) -> document
   }
+}
+
+/// Prefixes each line of a comment, leaving blank lines without a trailing
+/// space.
+///
+fn comment_lines(comment: String, prefix: String) -> Document {
+  comment
+  |> string.split("\n")
+  |> list.map(fn(line) {
+    case line {
+      "" -> doc.from_string(prefix)
+      _ -> doc.from_string(prefix <> " " <> line)
+    }
+  })
+  |> doc.join(doc.line)
 }
 
 fn print_type(state: State, type_: ConcreteType) -> #(State, String) {
@@ -4902,7 +4904,7 @@ pub fn import_(
 }
 
 /// Retrieves a type from an imported module.
-/// 
+///
 /// If a generic type is imported using this function, an error will be returned.
 /// For generic types, use [`imported_generic_type`](#imported_generic_type).
 ///
@@ -5034,7 +5036,7 @@ pub fn imported_value(module: ModuleName, name: String) -> Expression(a) {
 /// Imports a constructor from another module, for use in either an expression,
 /// or a pattern. For expressions, [`imported_value`](#imported_value) can be
 /// used also.
-/// 
+///
 /// ### Examples
 ///
 /// ```gleam
@@ -5081,7 +5083,7 @@ pub fn imported_value(module: ModuleName, name: String) -> Expression(a) {
 ///   }
 /// }
 /// ```
-/// 
+///
 pub fn imported_constuctor(module: ModuleName, name: String) -> Constructor {
   case dict.get(module.interface.constructors, name) {
     Ok(Constructor(..) as constructor) ->
@@ -5433,7 +5435,17 @@ pub fn define_module(
           }),
         )
       }),
-      constructors: interface.constructors,
+      constructors: dict.map_values(interface.constructors, fn(_, constructor) {
+        case constructor {
+          Constructor(parameters:, type_:, ..) ->
+            Constructor(
+              ..constructor,
+              parameters: list.map(parameters, deep_unwrap(state, _)),
+              type_: deep_unwrap(state, type_),
+            )
+          ImportError(..) -> constructor
+        }
+      }),
     )
   })
 }
@@ -5555,9 +5567,9 @@ pub type WithTail
 /// Generates a `case` expression that matches one or more patterns against a
 /// value. NOTE: Currently this does not perform any form of exhaustiveness
 /// checking so you need to ensure that patterns are exhaustive yourself.
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// {
 ///   use operation_type <- trick.custom_type("Operation", trick.Public)
@@ -5567,7 +5579,7 @@ pub type WithTail
 ///     trick.Field(Some("b"), trick.int_type()),
 ///   ])
 ///   use <- trick.end_custom_type
-/// 
+///
 ///   use evaluate <- trick.funtion("evaluate", trick.Public, {
 ///     use operation <- trick.parameter("operation", operation_type)
 ///     trick.function_body(trick.expression(trick.case_(operation, [
@@ -5655,19 +5667,19 @@ pub type WithTail
 ///       }
 ///     ])))
 ///   })
-/// 
+///
 ///   trick.end_module()
 /// }
 /// |> trick.to_string
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// pub type Operation {
 ///   Operation(operator: String, a: Int, b: Int)
 /// }
-/// 
+///
 /// pub fn evaluate(operation: Operation) -> Int {
 ///   case operation {
 ///     Operation("+", a, b) -> a + b
@@ -5679,7 +5691,7 @@ pub type WithTail
 ///   }
 /// }
 /// ```
-/// 
+///
 pub fn case_(
   subject: Expression(a),
   clauses: List(Clause),
@@ -5731,9 +5743,9 @@ pub fn case_(
 }
 
 /// Generates a single branch or "clause" of a `case` expression.
-/// 
+///
 /// See the documentation for [`case_`](#case_) for usae examples.
-/// 
+///
 pub fn clause(
   pattern: Pattern(a),
   body: fn(a) -> Expression(Variable),
@@ -5997,9 +6009,9 @@ pub fn list_pattern(elements: PatternList(WithTail, a)) -> Pattern(a) {
 /// tails must come at the end of list patterns, this function doesn't accept
 /// another pattern from the callback, just the value to return from the entire
 /// pattern.
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// trick.case_(trick.list([trick.int(1), trick.int(2)]), [
 ///   {
@@ -6016,16 +6028,16 @@ pub fn list_pattern(elements: PatternList(WithTail, a)) -> Pattern(a) {
 ///   }
 /// ])
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// case [1, 2] {
 ///   [_, ..tail] -> tail
 ///   _ -> []
 /// }
 /// ```
-/// 
+///
 pub fn tail(
   pattern: Pattern(a),
   callback: fn(a) -> b,
@@ -6038,9 +6050,9 @@ pub fn tail(
 
 /// Returns a value from a pattern, usually containing a tuple of the variables
 /// which are bound by the pattern.
-/// 
+///
 /// ## Examples
-/// 
+///
 /// ```gleam
 /// trick.case_(trick.tuple([trick.int(1), trick.int(2), trick.int(3)]), [
 ///   {
@@ -6054,7 +6066,7 @@ pub fn tail(
 ///   },
 /// ])
 /// ```
-/// 
+///
 pub fn return_from_pattern(value: a) -> PatternList(_, a) {
   use state <- PatternList
   Ok(#(state, [], value))
@@ -6245,10 +6257,10 @@ pub fn assignment_pattern(
 
 /// Generates an argument of a constructor pattern which matches a specific
 /// pattern for a labelled parameter of the record.
-/// 
+///
 /// See the documentation for [`constructor_pattern`](#constructor_pattern) for
 /// usage examples.
-/// 
+///
 pub fn labelled_pattern(
   label: String,
   pattern: Pattern(a),
@@ -6265,10 +6277,10 @@ pub fn labelled_pattern(
 /// this pattern cannot bind any variables and must not be followed by other
 /// patterns, this function doesn't acceptanother pattern from the callback,
 /// just the value to return from the entire pattern.
-/// 
+///
 /// See the documentation for [`constructor_pattern`](#constructor_pattern) for
 /// usage examples.
-/// 
+///
 pub fn ignore_fields(variables: fn() -> a) -> PatternList(Labelled, a) {
   use state <- PatternList
   Ok(#(state, [Spread], variables()))
@@ -6277,16 +6289,16 @@ pub fn ignore_fields(variables: fn() -> a) -> PatternList(Labelled, a) {
 /// Generates a pattern that matches a specific variant of a custom type, without
 /// any parameters. For variants which have parameters, use
 /// [`constructor_pattern`](#constructor_pattern).
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// {
 ///   use wibble_type <- trick.custom_type(trick.Public, "Wibble")
 ///   use wibble <- trick.constructor("Wibble", [])
 ///   use wobble <- trick.constructor("Wobble", [])
 ///   use <- trick.end_custom_type
-/// 
+///
 ///   use is_wibble <- trick.function(trick.Public, "is_wibble", {
 ///     use value <- trick.parameter("value", wibble_type)
 ///     trick.function_body(trick.expression(trick.case_(value, [
@@ -6300,20 +6312,20 @@ pub fn ignore_fields(variables: fn() -> a) -> PatternList(Labelled, a) {
 ///       },
 ///     ])))
 ///   })
-/// 
+///
 ///   trick.end_module()
 /// }
 /// |> trick.to_string
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// pub type Wibble {
 ///   Wibble
 ///   Wobble
 /// }
-/// 
+///
 /// pub fn is_wibble(value: Wibble) -> Bool {
 ///   case value {
 ///     Wibble -> True
@@ -6321,7 +6333,7 @@ pub fn ignore_fields(variables: fn() -> a) -> PatternList(Labelled, a) {
 ///   }
 /// }
 /// ```
-/// 
+///
 pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
   use state <- Pattern
   case constructor {
@@ -6363,9 +6375,9 @@ pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
 /// Generates a pattern that matches on a specific constructor a custom type,
 /// along with the specified arguments. If you want to match a variant without
 /// any fields, use [`variant_pattern`](#variant_pattern) instead.
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// {
 ///   use person_type <- trick.custom_type("Person", trick.Public)
@@ -6375,7 +6387,7 @@ pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
 ///     trick.Field(Some("age"), trick.int_type()),
 ///   ])
 ///   use <- trick.end_custom_type
-/// 
+///
 ///   use is_gleam_creator <- trick.function("is_gleam_creator", trick.Public, {
 ///     use person <- trick.parameter("person", person_type)
 ///     trick.function_body(trick.expression(trick.case_(person, [
@@ -6400,19 +6412,19 @@ pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
 ///       },
 ///     ])))
 ///   })
-/// 
+///
 ///   trick.end_module()
 /// }
 /// |> trick.to_string
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// pub type Person {
 ///   Person(name: String, job: String, age: Int)
 /// }
-/// 
+///
 /// pub fn is_gleam_creator(person: Person) -> Bool {
 ///   case person {
 ///     Person(name: "Louis", job: "Programmer", ..) -> True
@@ -6420,7 +6432,7 @@ pub fn variant_pattern(constructor: Constructor) -> Pattern(Nil) {
 ///   }
 /// }
 /// ```
-/// 
+///
 pub fn constructor_pattern(
   constructor: Constructor,
   arguments: PatternList(Labelled, a),
@@ -6710,9 +6722,9 @@ pub fn discard_pattern() -> Pattern(Nil) {
 }
 
 /// Generates a pattern that matches a specific bool value.
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// {
 ///   use bool_to_string <- trick.function("bool_to_string", trick.Public, {
@@ -6728,14 +6740,14 @@ pub fn discard_pattern() -> Pattern(Nil) {
 ///       },
 ///     ])))
 ///   })
-/// 
+///
 ///   trick.end_module()
 /// }
 /// |> trick.to_string
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// pub fn bool_to_string(value: Bool) -> String {
 ///   case value {
@@ -6744,7 +6756,7 @@ pub fn discard_pattern() -> Pattern(Nil) {
 ///   }
 /// }
 /// ```
-/// 
+///
 pub fn bool_pattern(bool: Bool) -> Pattern(Nil) {
   use state <- Pattern
   Ok(#(
@@ -6756,11 +6768,11 @@ pub fn bool_pattern(bool: Bool) -> Pattern(Nil) {
 
 /// Adds generics to a generic type constructor, turning it into a type which
 /// can be used in annotations.
-/// 
+///
 /// Returns an error if the wrong number of parameters are supplied.
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// {
 ///   use option <- trick.import_(option_module)
@@ -6779,20 +6791,20 @@ pub fn bool_pattern(bool: Bool) -> Pattern(Nil) {
 /// }
 /// |> trick.to_string
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// import gleam/option
-/// 
+///
 /// pub fn wibble(
 ///   a: option.Option(Int),
 ///   b: option.Option(Float),
 /// ) -> #(option.Option(Int), option.Option(Float)) {
-///  #(a, b) 
+///  #(a, b)
 /// }
 /// ```
-/// 
+///
 pub fn with_generics(
   type_: Type(HasParameters),
   generics: List(Type(NoParameters)),
@@ -6831,9 +6843,9 @@ pub fn with_generics(
 
 /// Generates a `let assert` statement which matches the provided expression to
 /// the specified pattern.
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// trick.block({
 ///   use #(a, b) <- trick.let_assert(
@@ -6850,16 +6862,16 @@ pub fn with_generics(
 /// })
 /// |> trick.expression_to_string
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// {
 ///   let assert [1, a, 3, b] = [1, 2, 3, 4]
 ///   a + b
 /// }
 /// ```
-/// 
+///
 pub fn let_assert(
   pattern: Pattern(a),
   value: Expression(a),
@@ -6896,12 +6908,12 @@ pub fn let_assert(
 
 /// Generates a `let` statement which matches the provided expression to the
 /// specified pattern. Returns an error if the pattern does not always match.
-/// 
+///
 /// For binding a simple variable pattern, it's easier to use
 /// [`variable`](#variable).
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```
 /// trick.block({
 ///   use #(a, b) <- trick.let_(
@@ -6916,16 +6928,16 @@ pub fn let_assert(
 /// })
 /// |> trick.expression_to_string
 /// ```
-/// 
+///
 /// Will generate:
-/// 
+///
 /// ```gleam
 /// {
 ///   let #(a, b) = #(1, 2)
 ///   a + b
 /// }
 /// ```
-/// 
+///
 pub fn let_(
   pattern: Pattern(a),
   value: Expression(a),
@@ -7012,12 +7024,12 @@ fn do_check_private(
 /// Defines an import for a module interface, allowing types from the imported
 /// module to be used in the module's definition. For importing types in a full
 /// code-generated module, see [`import_`](#import_).
-/// 
+///
 /// ### Examples
-/// 
+///
 /// ```gleam
 /// let assert Ok(option_module) = trick.define_module("gleam/option", ...)
-/// 
+///
 /// trick.define_module("gleam/dict", {
 ///   use option <- trick.define_import(option_module)
 ///
